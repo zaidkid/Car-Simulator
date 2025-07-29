@@ -8,7 +8,7 @@ import * as THREE from "three";
 const vehicleModels = {
   car1: "/assets/Convertible Car.glb",
   car2: "/assets/Police Car.glb",
-  bus: "/assets/Bus.glb",
+  bus: "/assets/bus.glb",
   bike: "/assets/Motorcycle.glb",
 };
 
