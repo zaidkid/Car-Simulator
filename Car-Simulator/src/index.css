@@ -1,0 +1,14 @@
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* If you're rendering Phaser canvas inside a div or directly to body */
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
