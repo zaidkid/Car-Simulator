@@ -620,7 +620,7 @@ export default function Race({ carRef, hudRef }) {
         finishPosition: 0,
         leaderboardTimer: 0,
         gridTimer: 0,
-        gridHold: 0.3 + Math.random() * 0.9,
+        gridHold: 0.15 + Math.random() * 0.25,
         sector: 1,
         sectorStart: 0,
         sectorTimes: [null, null, null],
@@ -680,7 +680,6 @@ export default function Race({ carRef, hudRef }) {
 
     const racing = running && grid.go && state.finishTime === null;
 
-    if (racing) return;
     state.elapsed += dt;
 
     // ---- AI opponents ----
