@@ -55,11 +55,14 @@ html, body {
 
   .timing-panel, .telemetry-panel { backdrop-filter: none; }
 
-  .timing-panel { top: 6px; left: max(8px, env(safe-area-inset-left)); width: 130px; }
+  .timing-panel { top: 6px; left: max(8px, env(safe-area-inset-left)); width: 150px; }
   .leaderboard-row { height: 21px; gap: 5px; padding: 0 6px 0 4px; }
   .leaderboard-position { width: 16px; height: 16px; line-height: 16px; font-size: 10px; }
   .leaderboard-team-color { height: 14px; }
-  .leaderboard-driver strong { font-size: 11px; }
+  .leaderboard-driver { min-width: 0; }
+  .leaderboard-driver strong {
+    font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .leaderboard-gap { font-size: 9px; }
 
   .telemetry-panel {

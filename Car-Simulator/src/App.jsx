@@ -4,7 +4,7 @@ import { Physics } from "@react-three/rapier";
 import { useGLTF } from "@react-three/drei";
 
 import "./App.css";
-import "./mobile.css";
+
 
 import Car from "./components/Car";
 import Ground from "./components/Ground";
@@ -20,6 +20,7 @@ import CockpitDash from "./components/Cockpitdash";
 import RaceResults from "./components/Raceresults";
 
 import { game, useGame } from "./components/gameStore";
+import "./mobile.css";
 
 // Start fetching the main car asset as soon as this module is loaded.
 useGLTF.preload("/models/Red_bull_car.glb");
