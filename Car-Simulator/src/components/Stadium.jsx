@@ -1,9 +1,9 @@
 import { useMemo, useRef, useLayoutEffect } from "react";
 import * as THREE from "three";
-import { curve } from "./trackCurve";
+import { curve } from "./TrackCurve";
 
 // APEX RACING - F1 trackside environment v4
-// Follows ./trackCurve, so nothing overlaps other sections of the circuit.
+// Follows ./TrackCurve, so nothing overlaps other sections of the circuit.
 // New in v4: glass + concrete skyscrapers with crowns and spires, team-coloured
 // grandstand sections with fascia boards, flags, animated-look big screens,
 // a pedestrian bridge over the circuit, a glazed paddock building and a ring of

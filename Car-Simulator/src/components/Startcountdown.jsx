@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { grid } from "./telemetry";
+import { grid } from "./Telemetry";
 
 const css = `
 .sc-wrap { position: fixed; left: 0; right: 0; top: 30%; z-index: 25; pointer-events: none;
