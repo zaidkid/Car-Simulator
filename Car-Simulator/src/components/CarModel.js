@@ -1,38 +1,90 @@
 import * as THREE from "three";
 
-export const MODEL_FLIP = false; // set true if the car drives backwards
-const LENGTH = 5.4;
+export const MODEL_FLIP = false;
 
-// Fits the GLB to the physics body (nose along +Z, wheels on the ground, centred)
-// and lets the caller recolour each material clone.
+const TARGET_LENGTH = 5.4;
+
+function tuneMaterial(material, recolor) {
+  const m = material.clone();
+
+  if ("roughness" in m) {
+    m.roughness = Math.min(m.roughness ?? 0.5, 0.38);
+  }
+
+  if ("metalness" in m) {
+    m.metalness = Math.max(m.metalness ?? 0, 0.28);
+  }
+
+  if ("envMapIntensity" in m) {
+    m.envMapIntensity = 1.45;
+  }
+
+  if (
+    m.isMeshStandardMaterial ||
+    m.isMeshPhysicalMaterial
+  ) {
+    m.envMapIntensity = 1.45;
+    m.needsUpdate = true;
+  }
+
+  recolor?.(m);
+
+  return m;
+}
+
 export function prepareCarModel(scene, recolor) {
   const car = scene.clone(true);
+
   car.position.set(0, 0, 0);
 
-  const size = new THREE.Box3().setFromObject(car).getSize(new THREE.Vector3());
-  console.log("car model size", size); // paste this if the direction is still wrong
+  const originalBounds = new THREE.Box3().setFromObject(car);
 
-  car.scale.setScalar(LENGTH / Math.max(size.x, size.z));
-  car.rotation.y = (size.x > size.z ? -Math.PI / 2 : 0) + (MODEL_FLIP ? Math.PI : 0);
+  const size = originalBounds.getSize(new THREE.Vector3());
+
+  const longestPlanarAxis = Math.max(size.x, size.z) || 1;
+
+  car.scale.setScalar(TARGET_LENGTH / longestPlanarAxis);
+
+  car.rotation.y =
+    (size.x > size.z ? -Math.PI / 2 : 0) +
+    (MODEL_FLIP ? Math.PI : 0);
+
   car.updateMatrixWorld(true);
 
-  const box = new THREE.Box3().setFromObject(car);
-  const c = box.getCenter(new THREE.Vector3());
-  car.position.set(-c.x, -box.min.y - 0.42, -c.z);
+  const bounds = new THREE.Box3().setFromObject(car);
 
-  car.traverse((mesh) => {
-    if (!mesh.isMesh) return;
-    mesh.castShadow = mesh.receiveShadow = true;
+  const center = bounds.getCenter(new THREE.Vector3());
 
-    const mats = [].concat(mesh.material).map((original) => {
-      const m = original.clone();
-      m.envMapIntensity = 1.3;
-      recolor?.(m);
-      return m;
-    });
+  car.position.set(
+    -center.x,
+    -bounds.min.y - 0.42,
+    -center.z
+  );
 
-    mesh.material = Array.isArray(mesh.material) ? mats : mats[0];
+  car.traverse((object) => {
+    if (!object.isMesh) return;
+
+    object.castShadow = true;
+    object.receiveShadow = true;
+
+    // Clone materials to avoid modifying shared GLTF materials.
+
+    const source = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+
+    const materials = source.map((material) =>
+      tuneMaterial(material, recolor)
+    );
+
+    object.material = Array.isArray(object.material)
+      ? materials
+      : materials[0];
+
+    object.frustumCulled = true;
   });
+
+  car.updateMatrixWorld(true);
 
   return car;
 }
