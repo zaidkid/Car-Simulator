@@ -12,7 +12,7 @@ import {
 import { ToneMappingMode } from "postprocessing";
 import * as THREE from "three";
 
-import { telemetry } from "./telemetry";
+import { telemetry } from "./Telemetry";
 
 // Put <Effects /> inside <Canvas>, after the scene content.
 export default function Effects() {

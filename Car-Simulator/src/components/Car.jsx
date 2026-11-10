@@ -6,8 +6,8 @@ import * as THREE from "three";
 
 import { game } from "./gameStore";
 import { START, track, trackNormals, WALL_OFFSET } from "./Race";
-import { telemetry, grid } from "./telemetry";
-import { prepareCarModel } from "./carModel";
+import { telemetry, grid } from "./Telemetry";
+import { prepareCarModel } from "./CarModel";
 
 const F1_CAR_URL = "/models/Red_bull_car.glb";
 const G = 9.81;

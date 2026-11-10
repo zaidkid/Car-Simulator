@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { useGame } from "./gameStore";
-import { telemetry, grid } from "./telemetry";
+import { telemetry, grid } from "./Telemetry";
 
 import "./BroadcastHUD.css";
 

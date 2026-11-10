@@ -1,6 +1,6 @@
 import { useMemo, useRef, useLayoutEffect } from "react";
 import * as THREE from "three";
-import { curve } from "./TrackCurve";
+import { curve } from "./Trackcurve";
 
 // APEX RACING - F1 trackside environment v4
 // Follows ./TrackCurve, so nothing overlaps other sections of the circuit.

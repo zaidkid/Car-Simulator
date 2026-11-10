@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { telemetry, raceInfo, grid } from "./telemetry";
+import { telemetry, raceInfo, grid } from "./Telemetry";
 
 const LED_COUNT = 15;
 

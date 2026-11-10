@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { curve } from "./trackCurve";
+import { curve } from "./Trackcurve";
 import { mapCars } from "./Racemap";
 
 const SAMPLES = 500;

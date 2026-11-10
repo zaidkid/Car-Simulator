@@ -5,9 +5,9 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 import { game, DRIVERS } from "./gameStore";
-import { grid, raceInfo } from "./telemetry";
-import { curve } from "./trackCurve";
-import { prepareCarModel } from "./carModel";
+import { grid, raceInfo } from "./Telemetry";
+import { curve } from "./RrackCurve";
+import { prepareCarModel } from "./CarModel";
 import { mapCars } from "./Racemap";
 
 // ==========================================

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { game } from "./gameStore";
-import { raceInfo } from "./telemetry";
+import { raceInfo } from "./Telemetry";
 
 // End-of-race screen: chequered flag moment, podium, full classification,
 // lap-by-lap times, penalties and personal bests.
