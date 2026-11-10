@@ -1,6 +1,7 @@
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
+import { useGLTF } from "@react-three/drei";
 
 import "./App.css";
 
@@ -19,6 +20,10 @@ import RaceResults from "./components/Raceresults";
 
 import { game, useGame } from "./components/gameStore";
 
+// Start fetching the main car asset as soon as this module is loaded.
+// Race.jsx may also call this; calling preload more than once is safe.
+useGLTF.preload("/models/Red_bull_car.glb");
+
 function GameLoop() {
   useFrame((_, delta) => {
     game.tick(Math.min(delta, 0.1));
@@ -27,11 +32,20 @@ function GameLoop() {
   return null;
 }
 
+// This component mounts only after everything inside the shared Suspense
+// boundary has finished loading.
+function SceneReady({ onReady }) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+
+  return null;
+}
+
 // Mobile touch controls
 function ControlButton({ label, field, mobileRef, className = "" }) {
   const handleDown = (event) => {
     event.preventDefault();
-
     mobileRef.current[field] = true;
 
     try {
@@ -65,14 +79,15 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
 }
 
 // Start menu
-function RaceMenu() {
-  const { phase, score, best, crashes } = useGame();
+function RaceMenu({ sceneReady }) {
+  const { phase } = useGame();
 
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (
         event.code === "Enter" &&
         !event.repeat &&
+        sceneReady &&
         game.get().phase === "ready"
       ) {
         game.start();
@@ -80,20 +95,15 @@ function RaceMenu() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sceneReady]);
 
   if (phase !== "ready") return null;
 
   return (
     <div className="menu-overlay">
       <section className="menu-panel">
-        <div className="menu-kicker">
-          GRAND PRIX · RACE WEEKEND
-        </div>
+        <div className="menu-kicker">GRAND PRIX · RACE WEEKEND</div>
 
         <h1>
           APEX <span>RACING</span>
@@ -106,16 +116,36 @@ function RaceMenu() {
 
         <button
           className="start-button"
-          onClick={() => game.start()}
+          disabled={!sceneReady}
+          onClick={() => {
+            if (sceneReady) game.start();
+          }}
         >
-          START GRAND PRIX
-          <span>↗</span>
+          {sceneReady ? "START GRAND PRIX" : "PREPARING CIRCUIT..."}
+          <span>{sceneReady ? "↗" : "•••"}</span>
         </button>
 
         <div className="menu-footnote">
-          PRESS ENTER TO START
+          {sceneReady ? "PRESS ENTER TO START" : "LOADING TRACK, CARS & GRAPHICS"}
         </div>
       </section>
+    </div>
+  );
+}
+
+function SceneLoading({ visible }) {
+  if (!visible) return null;
+
+  return (
+    <div className="scene-loading" role="status" aria-live="polite">
+      <div className="scene-loading-card">
+        <div className="scene-loading-mark">APEX <span>RACING</span></div>
+        <div className="scene-loading-spinner" />
+        <div className="scene-loading-title">PREPARING THE CIRCUIT</div>
+        <div className="scene-loading-subtitle">
+          Loading cars, track and race graphics...
+        </div>
+      </div>
     </div>
   );
 }
@@ -131,28 +161,24 @@ export default function App() {
   const carRef = useRef(null);
   const speedRef = useRef(null);
   const raceRef = useRef(null);
-
   const mobileRef = useRef(EMPTY_CONTROLS());
+  const [sceneReady, setSceneReady] = useState(false);
 
   // CENTRAL KEYBOARD INPUT
   useEffect(() => {
     const keyMap = {
       KeyW: "forward",
       ArrowUp: "forward",
-
       KeyS: "backward",
       ArrowDown: "backward",
-
       KeyA: "left",
       ArrowLeft: "left",
-
       KeyD: "right",
       ArrowRight: "right",
     };
 
     const handleKeyDown = (event) => {
       const field = keyMap[event.code];
-
       if (!field) return;
 
       event.preventDefault();
@@ -161,7 +187,6 @@ export default function App() {
 
     const handleKeyUp = (event) => {
       const field = keyMap[event.code];
-
       if (!field) return;
 
       event.preventDefault();
@@ -185,7 +210,6 @@ export default function App() {
 
   return (
     <main className="app-shell">
-
       <Canvas
         shadows
         dpr={[1, 1.25]}
@@ -203,100 +227,73 @@ export default function App() {
         }}
       >
         <color attach="background" args={["#cfdcea"]} />
-
         <GameLoop />
 
         <Suspense fallback={null}>
           <Atmosphere />
-
           <Stadium />
 
-          <Physics
-            gravity={[0, -25, 0]}
-            timeStep="vary"
-          >
+          <Physics gravity={[0, -25, 0]} timeStep="vary">
             <Car
               carRef={carRef}
               mobileRef={mobileRef}
               hudRef={speedRef}
             />
-
             <Ground />
-
-            <Race
-              carRef={carRef}
-              hudRef={raceRef}
-            />
+            <Race carRef={carRef} hudRef={raceRef} />
           </Physics>
 
           <FollowCamera targetRef={carRef} />
-
           <Effects />
+
+          <SceneReady onReady={() => setSceneReady(true)} />
         </Suspense>
       </Canvas>
 
+      <SceneLoading visible={!sceneReady} />
+
       {/* RACING HUD */}
-      <BroadcastHUD
-        speedRef={speedRef}
-        raceRef={raceRef}
-      />
-
+      <BroadcastHUD speedRef={speedRef} raceRef={raceRef} />
       <CockpitDash />
-
       <MiniMap />
-
       <StartCountdown />
 
       {/* MENUS */}
-      <RaceMenu />
-
-      <RaceResults
-        onRestart={() => game.start()}
-      />
+      <RaceMenu sceneReady={sceneReady} />
+      <RaceResults onRestart={() => game.start()} />
 
       {/* MOBILE TOUCH CONTROLS */}
       <div className="mobile-controls">
-
-        {/* LEFT SIDE: REVERSE + LEFT TURN */}
         <div className="control-left">
-
           <ControlButton
             label="REV"
             field="backward"
             mobileRef={mobileRef}
             className="reverse-btn"
           />
-
           <ControlButton
             label="◀"
             field="left"
             mobileRef={mobileRef}
             className="steer-btn"
           />
-
         </div>
 
-        {/* RIGHT SIDE: ACCELERATE + RIGHT TURN */}
         <div className="control-right">
-
           <ControlButton
             label="▲"
             field="forward"
             mobileRef={mobileRef}
             className="accelerate-btn"
           />
-
           <ControlButton
             label="▶"
             field="right"
             mobileRef={mobileRef}
             className="steer-btn"
           />
-
         </div>
-
       </div>
-
     </main>
   );
 }

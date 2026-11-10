@@ -10,6 +10,10 @@ import { curve } from "./Trackcurve";
 import { prepareCarModel } from "./CarModel";
 import { mapCars } from "./Racemap";
 
+// Begin downloading and parsing the player/AI car model as soon as this
+// module is imported, rather than waiting for the Race component to mount.
+useGLTF.preload("/models/Red_bull_car.glb");
+
 // ==========================================
 // CONFIGURATION
 // ==========================================

@@ -441,3 +441,57 @@ canvas {
     min-height: 64px;
   }
 }
+/* =====================================
+   START MENU — FIX OVERLAPPING HUD
+===================================== */
+
+.menu-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  pointer-events: auto !important;
+}
+
+.menu-panel {
+  position: relative !important;
+  z-index: 10000 !important;
+
+  width: min(500px, 92vw);
+  overflow: visible;
+}
+
+/* Keep the Start button clearly visible */
+.start-button {
+  position: relative !important;
+  z-index: 10001 !important;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  min-height: 50px;
+  width: 100%;
+
+  margin-top: 24px;
+  cursor: pointer;
+  pointer-events: auto !important;
+}
+
+/* Prevent dashboard elements from appearing above menu */
+.menu-overlay ~ * {
+  z-index: auto;
+}
+
+/* Keep menu text readable */
+.menu-panel h1,
+.menu-panel p,
+.menu-kicker,
+.menu-footnote {
+  position: relative;
+  z-index: 2;
+}
