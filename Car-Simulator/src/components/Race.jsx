@@ -1,0 +1,1027 @@
+import { useLayoutEffect, useMemo, useRef } from "react";
+import { RigidBody, CuboidCollider } from "@react-three/rapier";
+import { useFrame } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
+import * as THREE from "three";
+
+import { game, DRIVERS } from "./gameStore";
+import { grid, raceInfo } from "./telemetry";
+import { curve } from "./trackCurve";
+import { prepareCarModel } from "./carModel";
+import { mapCars } from "./Racemap";
+
+// ==========================================
+// CONFIGURATION
+// ==========================================
+
+const SAMPLES = 1400;
+export const TRACK_WIDTH = 10; // half width of the asphalt
+const KERB_WIDTH = 2;
+const RUNOFF_END = 19;
+const GRAVEL_END = 26;
+export const WALL_OFFSET = GRAVEL_END;
+const LAPS = 1;
+const GRID_GAP = 7;
+
+// F1-style rules
+const LIMIT = TRACK_WIDTH + 1; // car centre this far out = all four wheels over the white line
+const LIMITS_PER_PENALTY = 3; // every 3rd track-limit offence = time penalty
+const PENALTY = 5; // seconds
+const DRS_RULES = true; // false = DRS anywhere
+const DRS_FROM_LAP = 2;
+const DRS_GAP = 1.0; // seconds to the car ahead
+
+const AI_COLORS = ["#3671ff", "#e10600", "#ff8700", "#e10600", "#00d2be"];
+const UP = new THREE.Vector3(0, 1, 0);
+
+// ==========================================
+// TRACK DATA
+// ==========================================
+
+const TRACK_LENGTH = curve.getLength();
+const TOTAL = LAPS * TRACK_LENGTH;
+const DS = TRACK_LENGTH / SAMPLES;
+const wrap = (d) => ((d % TRACK_LENGTH) + TRACK_LENGTH) % TRACK_LENGTH;
+
+const PLAYER_START_DISTANCE = -(AI_COLORS.length + 1) * GRID_GAP;
+const startT = wrap(PLAYER_START_DISTANCE) / TRACK_LENGTH;
+const startPoint = curve.getPointAt(startT);
+const startTangent = curve.getTangentAt(startT);
+
+export const START = {
+  pos: [startPoint.x, 0.42, startPoint.z],
+  yaw: Math.atan2(startTangent.x, startTangent.z),
+};
+
+// Written every frame by the race loop, read by Car.jsx
+export const track = {
+  off: false,
+  surface: "track", // track | kerb | runoff | gravel
+  offset: 0,
+  index: 0,
+  resetToken: 0,
+  drsAllowed: false,
+};
+
+const linePoint = curve.getPointAt(0);
+const lineYaw = Math.atan2(curve.getTangentAt(0).x, curve.getTangentAt(0).z);
+
+const points = [];
+const normals = [];
+const tangents = [];
+
+for (let i = 0; i < SAMPLES; i++) {
+  const tangent = curve.getTangentAt(i / SAMPLES);
+  points.push(curve.getPointAt(i / SAMPLES));
+  tangents.push(tangent.clone());
+  normals.push(new THREE.Vector3(-tangent.z, 0, tangent.x).normalize());
+}
+
+export const trackPoints = points;
+export const trackNormals = normals;
+
+// Positive curvature = the corner bends toward the +normal side
+const rawCurvature = points.map((_, i) => {
+  const a = tangents[(i - 1 + SAMPLES) % SAMPLES];
+  const b = tangents[(i + 1) % SAMPLES];
+  return ((b.x - a.x) * normals[i].x + (b.z - a.z) * normals[i].z) / (2 * DS);
+});
+
+const curvature = rawCurvature.map((_, i) => {
+  let sum = 0;
+  for (let o = -8; o <= 8; o++) sum += rawCurvature[(i + o + SAMPLES) % SAMPLES];
+  return sum / 17;
+});
+
+// Fastest speed (m/s) a car can carry through each part of the track
+const AI_LATERAL_ACCEL = 40;
+const cornerSpeed = curvature.map((k) =>
+  THREE.MathUtils.clamp(Math.sqrt(AI_LATERAL_ACCEL / Math.max(Math.abs(k), 1e-4)), 28, 120)
+);
+
+const LOOK = Math.round(350 / DS);
+
+// Speed an AI car may carry now so it can still brake for the next ~350 m
+function brakingTarget(distance, topSpeed, gripScale, brake) {
+  const start = Math.floor(wrap(distance) / DS);
+  let target = topSpeed;
+
+  for (let step = 0; step < LOOK; step += 3) {
+    const corner = Math.min(topSpeed, cornerSpeed[(start + step) % SAMPLES] * gripScale);
+    const allowed = Math.sqrt(corner * corner + 2 * brake * step * DS);
+    if (allowed < target) target = allowed;
+  }
+
+  return target;
+}
+
+// DRS zones: straights longer than 250 m
+const drsZone = new Array(SAMPLES).fill(false);
+{
+  const begin = Math.max(0, curvature.findIndex((k) => Math.abs(k) > 0.002));
+  let s = -1;
+
+  for (let j = 0; j <= SAMPLES; j++) {
+    const straight = j < SAMPLES && Math.abs(curvature[(begin + j) % SAMPLES]) < 0.0012;
+
+    if (straight && s < 0) s = j;
+
+    if (!straight && s >= 0) {
+      if ((j - s) * DS >= 250) {
+        for (let m = s + 8; m < j - 10; m++) drsZone[(begin + m) % SAMPLES] = true;
+      }
+      s = -1;
+    }
+  }
+}
+
+// ==========================================
+// TRACK GEOMETRY
+// ==========================================
+
+function makeStrip(inner, outer, y, colorAt) {
+  const positions = [];
+  const colors = [];
+
+  for (let i = 0; i < SAMPLES; i++) {
+    const next = (i + 1) % SAMPLES;
+    const color = colorAt(i);
+
+    for (const [index, offset] of [
+      [i, inner], [i, outer], [next, outer],
+      [i, inner], [next, outer], [next, inner],
+    ]) {
+      positions.push(
+        points[index].x + normals[index].x * offset,
+        y,
+        points[index].z + normals[index].z * offset
+      );
+      colors.push(color.r, color.g, color.b);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+
+  return geometry;
+}
+
+const both = (a, b, y, colorAt) => [makeStrip(a, b, y, colorAt), makeStrip(-b, -a, y, colorAt)];
+
+const white = new THREE.Color("#f4f4f4");
+const red = new THREE.Color("#d71920");
+const concrete = new THREE.Color("#3a3d44");
+const runoffColor = new THREE.Color("#55585e");
+const gravelColor = new THREE.Color("#b9a67f");
+
+// Asphalt in lateral bands: the middle is darker (rubbered-in racing line)
+const BANDS = [
+  [-TRACK_WIDTH, -6, "#303338"],
+  [-6, -2, "#2a2c31"],
+  [-2, 2, "#232529"],
+  [2, 6, "#2a2c31"],
+  [6, TRACK_WIDTH, "#303338"],
+].map(([a, b, hex]) => {
+  const dark = new THREE.Color(hex);
+  const light = dark.clone().offsetHSL(0, 0, 0.012);
+  return [a, b, dark, light];
+});
+
+// Kerbs only in corners; flat concrete on straights
+const kerbColor = (i) =>
+  Math.abs(curvature[i]) > 0.0028 ? (i % 2 ? red : white) : concrete;
+
+// Drawn bottom to top (later layers get a stronger polygon offset)
+const trackMeshes = [
+  ...both(RUNOFF_END, GRAVEL_END, 0.045, () => gravelColor),
+  ...both(TRACK_WIDTH + KERB_WIDTH, RUNOFF_END, 0.05, () => runoffColor),
+  ...BANDS.map(([a, b, dark, light]) => makeStrip(a, b, 0.055, (i) => (i % 60 < 30 ? dark : light))),
+  ...both(TRACK_WIDTH, TRACK_WIDTH + KERB_WIDTH, 0.06, kerbColor),
+  ...both(TRACK_WIDTH - 0.55, TRACK_WIDTH - 0.3, 0.062, () => white), // track-limit lines
+];
+
+// ==========================================
+// BARRIERS, TYRE WALLS, DRS BOARDS (instanced)
+// ==========================================
+
+const BARRIER_COLORS = ["#d71920", "#f4f4f4", "#1b2a6b", "#101114"];
+const BARRIER_STEP = 3;
+const BARRIER_LENGTH = BARRIER_STEP * DS * 1.03;
+
+const at = (i, offset, y) =>
+  new THREE.Vector3(
+    points[i].x + normals[i].x * offset,
+    y,
+    points[i].z + normals[i].z * offset
+  );
+
+const barrierItems = [];
+const tyreItems = [];
+const drsItems = [];
+
+for (let i = 0; i < SAMPLES; i += BARRIER_STEP) {
+  const yaw = Math.atan2(tangents[i].x, tangents[i].z);
+  const color = BARRIER_COLORS[Math.floor(i / BARRIER_STEP / 2) % BARRIER_COLORS.length];
+
+  for (const side of [1, -1]) {
+    barrierItems.push({ position: at(i, side * WALL_OFFSET, 0.6), yaw, color });
+  }
+}
+
+// Tyre stacks on the outside of the tighter corners
+for (let i = 0; i < SAMPLES; i++) {
+  if (Math.abs(curvature[i]) < 0.0055) continue;
+
+  const outside = -Math.sign(curvature[i]);
+
+  for (let layer = 0; layer < 2; layer++) {
+    tyreItems.push({
+      position: at(i, outside * (WALL_OFFSET - 1.1 - (i % 2) * 0.9), 0.25 + layer * 0.5),
+      yaw: 0,
+      color: (i + layer) % 7 === 0 ? "#d71920" : "#17181b",
+    });
+  }
+}
+
+// Green DRS boards at the start of each zone
+drsZone.forEach((zone, i) => {
+  if (!zone || drsZone[(i - 1 + SAMPLES) % SAMPLES]) return;
+
+  for (const side of [1, -1]) {
+    drsItems.push({
+      position: at(i, side * (TRACK_WIDTH + KERB_WIDTH + 1.5), 1.5),
+      yaw: Math.atan2(tangents[i].x, tangents[i].z),
+      color: "#00c853",
+    });
+  }
+});
+
+function InstancedItems({ items, children }) {
+  const ref = useRef();
+
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    const color = new THREE.Color();
+
+    items.forEach((item, index) => {
+      quaternion.setFromAxisAngle(UP, item.yaw);
+      matrix.compose(item.position, quaternion, scale);
+      mesh.setMatrixAt(index, matrix);
+      mesh.setColorAt(index, color.set(item.color));
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [items]);
+
+  if (!items.length) return null;
+
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[undefined, undefined, items.length]}
+      receiveShadow
+      frustumCulled={false}
+    >
+      {children}
+      <meshStandardMaterial roughness={0.65} metalness={0.05} />
+    </instancedMesh>
+  );
+}
+
+// ==========================================
+// START LINE, GRID BOXES AND START LIGHTS
+// ==========================================
+
+function makeCheckerTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 32;
+
+  const ctx = canvas.getContext("2d");
+  for (let x = 0; x < 16; x++) {
+    for (let y = 0; y < 2; y++) {
+      ctx.fillStyle = (x + y) % 2 ? "#111111" : "#f4f4f4";
+      ctx.fillRect(x * 16, y * 16, 16, 16);
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  return texture;
+}
+
+const checkerTexture = makeCheckerTexture();
+
+const laneXZ = (distance, lane) => {
+  const t = wrap(distance) / TRACK_LENGTH;
+  const p = curve.getPointAt(t);
+  const tan = curve.getTangentAt(t);
+  return { x: p.x - tan.z * lane, z: p.z + tan.x * lane, yaw: Math.atan2(tan.x, tan.z) };
+};
+
+const gridSlots = [
+  ...AI_COLORS.map((_, i) => laneXZ(-(i + 1) * GRID_GAP, i % 2 === 0 ? -3 : 3)),
+  laneXZ(PLAYER_START_DISTANCE, 0),
+];
+
+function GridBoxes() {
+  return gridSlots.map((slot, index) => (
+    <group key={index} position={[slot.x, 0.075, slot.z]} rotation={[0, slot.yaw, 0]}>
+      {[
+        [0, 3.4, 2.6, 0.14],
+        [-1.3, 0.4, 0.1, 6],
+        [1.3, 0.4, 0.1, 6],
+      ].map(([x, z, w, d], k) => (
+        <mesh key={k} position={[x, 0, z]}>
+          <boxGeometry args={[w, 0.01, d]} />
+          <meshBasicMaterial color="#f2f2f2" />
+        </mesh>
+      ))}
+    </group>
+  ));
+}
+
+function StartLine({ lightMats }) {
+  return (
+    <group position={[linePoint.x, 0, linePoint.z]} rotation={[0, lineYaw, 0]}>
+      <mesh position={[0, 0.068, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[TRACK_WIDTH * 2, 2]} />
+        <meshBasicMaterial
+          map={checkerTexture}
+          polygonOffset
+          polygonOffsetFactor={-12}
+          polygonOffsetUnits={-12}
+        />
+      </mesh>
+
+      {[-14, 14].map((x) => (
+        <mesh key={x} position={[x, 4.2, 0]} castShadow>
+          <boxGeometry args={[0.9, 8.4, 0.9]} />
+          <meshStandardMaterial color="#1a1c22" roughness={0.5} />
+        </mesh>
+      ))}
+
+      <mesh position={[0, 8.4, 0]} castShadow>
+        <boxGeometry args={[29, 1.4, 1.4]} />
+        <meshStandardMaterial color="#1a1c22" roughness={0.5} />
+      </mesh>
+
+      <mesh position={[0, 7.6, -0.3]}>
+        <boxGeometry args={[11.5, 2.4, 0.7]} />
+        <meshStandardMaterial color="#0c0d10" roughness={0.6} />
+      </mesh>
+
+      {/* Five columns of two lights, facing the grid (behind the line) */}
+      {[0, 1, 2, 3, 4].flatMap((column) =>
+        [0, 1].map((row) => (
+          <mesh key={`${column}-${row}`} position={[(column - 2) * 2.1, 8.05 - row * 0.9, -0.72]}>
+            <sphereGeometry args={[0.34, 16, 16]} />
+            <meshBasicMaterial
+              ref={(m) => {
+                if (m) lightMats.current[column * 2 + row] = m;
+              }}
+              color="#2a0808"
+              toneMapped={false}
+            />
+          </mesh>
+        ))
+      )}
+    </group>
+  );
+}
+
+// ==========================================
+// HELPERS
+// ==========================================
+
+const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}`;
+
+// Race-control message, read by the HUD (raceInfo.message, raceInfo.messageAt)
+const say = (text) => {
+  raceInfo.message = text;
+  raceInfo.messageAt = performance.now();
+};
+
+const freshRules = () => ({
+  penalty: 0,
+  violations: 0,
+  lapInvalid: false,
+  outside: false,
+  limitCooldown: 0,
+  penaltyCooldown: 0,
+  finalTime: null,
+});
+
+// Build the final six-driver classification before ending the game.
+// AI cars that have not crossed the line receive a projected finish time.
+function buildFinalClassification({ state, opponents }) {
+  const playerDriver = DRIVERS[0] || {};
+  const playerTime = state.finalTime ?? state.finishTime ?? state.elapsed;
+
+  const entries = [
+    {
+      ...playerDriver,
+      player: true,
+      time: playerTime,
+      est: false,
+    },
+    ...opponents.map((opponent, index) => {
+      const finished = opponent.finishTime !== null;
+      const projectedTime = finished
+        ? opponent.finishTime
+        : state.elapsed +
+          Math.max(0, TOTAL - opponent.distance) /
+            Math.max(opponent.speed, 20);
+
+      return {
+        ...(DRIVERS[index + 1] || {}),
+        player: false,
+        time: projectedTime,
+        est: !finished,
+      };
+    }),
+  ];
+
+  entries.sort((a, b) => a.time - b.time);
+
+  const winnerTime = entries[0]?.time ?? 0;
+
+  return entries.map((entry, index) => ({
+    ...entry,
+    position: index + 1,
+    gap: Math.max(0, entry.time - winnerTime),
+  }));
+}
+
+// ==========================================
+// RACE COMPONENT
+// ==========================================
+
+export default function Race({ carRef, hudRef }) {
+  const { scene } = useGLTF("/models/Red_bull_car.glb");
+  const lightMats = useRef([]);
+
+  // AI OPPONENTS
+  const opponents = useMemo(
+    () =>
+      AI_COLORS.map((color, index) => {
+        const teamColor = new THREE.Color(color);
+
+        const object = prepareCarModel(scene, (m) => {
+          const hsl = {};
+          m.color?.getHSL(hsl);
+
+          if (m.color && hsl.s > 0.12 && hsl.l > 0.16 && hsl.l < 0.88) {
+            m.color.copy(teamColor).multiplyScalar(Math.max(0.72, hsl.l * 1.35));
+          }
+        });
+
+        return {
+          object,
+          bodyRef: { current: null },
+          distance: -(index + 1) * GRID_GAP,
+          speed: 0,
+          maxSpeed: 84 + (index % 3) * 2, // 302 to 310 km/h
+          gripScale: 0.94 + index * 0.012,
+          power: 0.94 + (index % 3) * 0.03,
+          lane: index % 2 === 0 ? -3 : 3,
+          laneOffset: 0,
+          finishTime: null,
+          impactTimer: 0,
+          impactDirection: 0,
+          impactOffset: 0,
+          impactYaw: 0,
+          collisionCooldown: 0,
+        };
+      }),
+    [scene]
+  );
+
+  const race = useRef({
+    phase: "ready",
+    distance: PLAYER_START_DISTANCE,
+    sampleIndex: Math.round(startT * SAMPLES) % SAMPLES,
+    completedLaps: 0,
+    elapsed: 0,
+    lapStartedAt: 0,
+    bestLap: null,
+    lastLap: null,
+    finishTime: null,
+    finishPosition: 0,
+    leaderboardTimer: 0,
+    gridTimer: 0,
+    gridHold: 1.2,
+    litShown: -1,
+    sector: 1,
+    sectorStart: 0,
+    sectorTimes: [null, null, null],
+    resetToken: 0,
+    ...freshRules(),
+  });
+
+  // AI COLLISION REACTION + "CAUSING A COLLISION" PENALTY
+  const handleAICollision = (index) => {
+    const opponent = opponents[index];
+    const playerBody = carRef.current;
+    const aiBody = opponent?.bodyRef.current;
+
+    if (!opponent || !playerBody || !aiBody || opponent.collisionCooldown > 0) return;
+
+    const playerPosition = playerBody.translation();
+    const aiPosition = aiBody.translation();
+    const q = aiBody.rotation();
+    const aiRotation = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+
+    const aiRight = new THREE.Vector3(1, 0, 0).applyQuaternion(aiRotation);
+    const aiForward = new THREE.Vector3(0, 0, 1).applyQuaternion(aiRotation);
+
+    const dx = playerPosition.x - aiPosition.x;
+    const dz = playerPosition.z - aiPosition.z;
+
+    opponent.impactDirection = dx * aiRight.x + dz * aiRight.z >= 0 ? -1 : 1;
+    opponent.impactTimer = 1.5;
+    opponent.collisionCooldown = 0.55;
+    opponent.speed *= 0.72;
+
+    // Hitting a car from behind at speed = 5 second penalty
+    const v = playerBody.linvel();
+    const s = race.current;
+    const fromBehind = dx * aiForward.x + dz * aiForward.z < -1;
+
+    if (
+      fromBehind &&
+      Math.hypot(v.x, v.z) > 8 &&
+      s.phase === "playing" &&
+      grid.go &&
+      s.finishTime === null &&
+      s.penaltyCooldown <= 0
+    ) {
+      s.penalty += PENALTY;
+      s.penaltyCooldown = 3;
+      say(`${PENALTY} SECOND PENALTY - CAUSING A COLLISION`);
+    }
+  };
+
+  // ==========================================
+  // MAIN RACE LOOP
+  // ==========================================
+
+  useFrame((_, delta) => {
+    const body = carRef.current;
+    if (!body) return;
+
+    const dt = Math.min(delta, 0.05);
+    const state = race.current;
+    const phase = game.get().phase;
+    const running = phase === "playing";
+
+    // ---- new race ----
+    if (running && state.phase !== "playing") {
+      opponents.forEach((o, index) => {
+        Object.assign(o, {
+          distance: -(index + 1) * GRID_GAP,
+          speed: 0,
+          laneOffset: 0,
+          finishTime: null,
+          impactTimer: 0,
+          impactDirection: 0,
+          impactOffset: 0,
+          impactYaw: 0,
+          collisionCooldown: 0,
+        });
+
+        const { x, z, yaw } = laneXZ(o.distance, o.lane);
+
+        o.bodyRef.current?.setTranslation({ x, y: 0.42, z }, true);
+        o.bodyRef.current?.setRotation(
+          { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) },
+          true
+        );
+      });
+
+      Object.assign(state, {
+        distance: PLAYER_START_DISTANCE,
+        sampleIndex: Math.round(startT * SAMPLES) % SAMPLES,
+        completedLaps: 0,
+        elapsed: 0,
+        lapStartedAt: 0,
+        bestLap: null,
+        lastLap: null,
+        finishTime: null,
+        finishPosition: 0,
+        leaderboardTimer: 0,
+        gridTimer: 0,
+        gridHold: 0.3 + Math.random() * 0.9,
+        sector: 1,
+        sectorStart: 0,
+        sectorTimes: [null, null, null],
+        resetToken: track.resetToken,
+        ...freshRules(),
+      });
+
+      raceInfo.message = "";
+      raceInfo.results = null;
+      raceInfo.finished = false;
+      grid.go = false;
+      grid.lights = 0;
+      grid.count = 3;
+      grid.active = false;
+    }
+
+    state.phase = phase;
+    state.limitCooldown = Math.max(0, state.limitCooldown - dt);
+    state.penaltyCooldown = Math.max(0, state.penaltyCooldown - dt);
+
+    // ---- start sequence: 3 - 2 - 1, lights build up, lights out = GO ----
+    if (!running) {
+      grid.go = false;
+      grid.lights = 0;
+      grid.count = 0;
+      grid.active = false;
+    } else if (!grid.go) {
+      state.gridTimer += dt;
+      grid.active = true;
+
+      // 3 - 2 - 1, then the lights go out after a short random hold
+      grid.count = Math.max(1, 3 - Math.floor(state.gridTimer));
+      grid.lights = Math.min(5, Math.floor(state.gridTimer / 0.6) + 1);
+
+      if (state.gridTimer >= 3 + state.gridHold) {
+        grid.go = true;
+        grid.goAt = performance.now();
+        grid.lights = 0;
+        grid.count = 0;
+        grid.active = false;
+        say("LIGHTS OUT");
+      }
+    } else {
+      grid.active = false;
+    }
+
+    if (state.litShown !== grid.lights) {
+      state.litShown = grid.lights;
+
+      lightMats.current.forEach((material, index) => {
+        if (!material) return;
+
+        if (Math.floor(index / 2) < grid.lights) material.color.setRGB(7, 0.25, 0.25);
+        else material.color.setRGB(0.16, 0.03, 0.03);
+      });
+    }
+
+    const racing = running && grid.go && state.finishTime === null;
+
+    if (racing) state.elapsed += dt;
+
+    // ---- AI opponents ----
+    opponents.forEach((o, oi) => {
+      const AI_BRAKE = 38;
+
+      if (racing) {
+        const target = brakingTarget(o.distance, o.maxSpeed, o.gripScale, AI_BRAKE);
+
+        if (o.speed > target) {
+          o.speed = Math.max(target, o.speed - AI_BRAKE * dt);
+        } else {
+          const acceleration = THREE.MathUtils.clamp(14 - 0.11 * o.speed, 2.5, 12.5) * o.power;
+          o.speed = Math.min(target, o.speed + acceleration * dt);
+        }
+
+        o.distance += o.speed * dt;
+
+        if (o.finishTime === null && o.distance >= TOTAL) o.finishTime = state.elapsed;
+      }
+
+      o.impactTimer = Math.max(0, o.impactTimer - dt);
+      o.collisionCooldown = Math.max(0, o.collisionCooldown - dt);
+
+      const impact = THREE.MathUtils.smoothstep(o.impactTimer, 0, 1.5);
+
+      o.impactOffset = THREE.MathUtils.damp(o.impactOffset, o.impactDirection * 2.1 * impact, 3.2, dt);
+      o.impactYaw = THREE.MathUtils.damp(o.impactYaw, o.impactDirection * 0.24 * impact, 3.2, dt);
+
+      // Racing line: drift toward the inside of corners
+      const k = curvature[Math.floor(wrap(o.distance) / DS) % SAMPLES];
+      const cornerWeight = THREE.MathUtils.clamp(Math.abs(k) / 0.006, 0, 1);
+      const targetLane = o.lane + Math.sign(k) * cornerWeight * 2.5;
+
+      o.laneOffset = THREE.MathUtils.damp(o.laneOffset, targetLane - o.lane, 1.5, dt);
+
+      const { x, z, yaw: baseYaw } = laneXZ(o.distance, o.lane + o.laneOffset + o.impactOffset);
+      const yaw = baseYaw + o.impactYaw;
+
+      const mc =
+        mapCars[oi + 1] ||
+        (mapCars[oi + 1] = { color: DRIVERS[oi + 1].color, player: false, x: 0, z: 0, yaw: 0 });
+      mc.x = x;
+      mc.z = z;
+      mc.yaw = yaw;
+
+      o.bodyRef.current?.setNextKinematicTranslation({ x, y: 0.42, z });
+      o.bodyRef.current?.setNextKinematicRotation({
+        x: 0,
+        y: Math.sin(yaw / 2),
+        z: 0,
+        w: Math.cos(yaw / 2),
+      });
+    });
+
+    // ---- player position on track ----
+    const position = body.translation();
+    const lv = body.linvel();
+    const playerSpeed = Math.hypot(lv.x, lv.z);
+
+    const rq = body.rotation();
+    const pc =
+      mapCars[0] ||
+      (mapCars[0] = { color: DRIVERS[0].color, player: true, x: 0, z: 0, yaw: 0 });
+    pc.x = position.x;
+    pc.z = position.z;
+    pc.yaw = 2 * Math.atan2(rq.y, rq.w);
+
+    // Car was put back on the grid (R key)
+    if (state.resetToken !== track.resetToken) {
+      state.resetToken = track.resetToken;
+      state.sampleIndex = Math.round(startT * SAMPLES) % SAMPLES;
+      state.distance = state.completedLaps * TRACK_LENGTH + PLAYER_START_DISTANCE;
+      state.sector = 1;
+      state.sectorStart = state.elapsed;
+    }
+
+    const searchNearest = (from, to) => {
+      let best = Infinity;
+      let bestIndex = state.sampleIndex;
+
+      for (let offset = from; offset <= to; offset++) {
+        const index = (state.sampleIndex + offset + SAMPLES) % SAMPLES;
+        const dx = points[index].x - position.x;
+        const dz = points[index].z - position.z;
+        const d = dx * dx + dz * dz;
+
+        if (d < best) {
+          best = d;
+          bestIndex = index;
+        }
+      }
+
+      return [best, bestIndex];
+    };
+
+    let [nearestSq, nearestIndex] = searchNearest(-35, 35);
+    if (nearestSq > 40 * 40) [nearestSq, nearestIndex] = searchNearest(0, SAMPLES - 1);
+
+    let sampleDelta = nearestIndex - state.sampleIndex;
+    if (sampleDelta > SAMPLES / 2) sampleDelta -= SAMPLES;
+    if (sampleDelta < -SAMPLES / 2) sampleDelta += SAMPLES;
+
+    if (running && state.finishTime === null) {
+      state.distance += (sampleDelta / SAMPLES) * TRACK_LENGTH;
+    }
+
+    state.sampleIndex = nearestIndex;
+
+    // ---- surface and track limits ----
+    const signedOffset =
+      (position.x - points[nearestIndex].x) * normals[nearestIndex].x +
+      (position.z - points[nearestIndex].z) * normals[nearestIndex].z;
+
+    const absOffset = Math.abs(signedOffset);
+
+    track.offset = signedOffset;
+    track.index = nearestIndex;
+    track.surface =
+      absOffset <= TRACK_WIDTH
+        ? "track"
+        : absOffset <= TRACK_WIDTH + KERB_WIDTH
+          ? "kerb"
+          : absOffset <= RUNOFF_END
+            ? "runoff"
+            : "gravel";
+    track.off = track.surface === "runoff" || track.surface === "gravel";
+
+    // All four wheels over the white line: lap deleted, every 3rd offence = 5 s penalty
+    const outside = absOffset > LIMIT;
+
+    if (racing && outside && !state.outside && state.limitCooldown <= 0) {
+      state.violations += 1;
+      state.lapInvalid = true;
+      state.limitCooldown = 1.5;
+
+      if (state.violations % LIMITS_PER_PENALTY === 0) {
+        state.penalty += PENALTY;
+        say(`${PENALTY} SECOND PENALTY - TRACK LIMITS`);
+      } else {
+        say(`TRACK LIMITS - LAP DELETED (${state.violations % LIMITS_PER_PENALTY}/${LIMITS_PER_PENALTY})`);
+      }
+    }
+
+    state.outside = outside;
+
+    // ---- DRS: zones only, from lap 2, within 1 s of the car ahead ----
+    let ahead = Infinity;
+    opponents.forEach((o) => {
+      const d = o.distance - state.distance;
+      if (d > 0 && d < ahead) ahead = d;
+    });
+
+    const gapAhead = ahead / Math.max(playerSpeed, 20);
+    const inZone = drsZone[nearestIndex];
+
+    track.drsAllowed =
+      racing &&
+      (!DRS_RULES || (inZone && state.completedLaps + 1 >= DRS_FROM_LAP && gapAhead < DRS_GAP));
+
+    // ---- laps, finish, sectors ----
+    if (running && state.finishTime === null) {
+      const completed = Math.max(0, Math.floor(state.distance / TRACK_LENGTH));
+
+      if (completed > state.completedLaps) {
+        const lapTime = state.elapsed - state.lapStartedAt;
+
+        state.lastLap = lapTime;
+        raceInfo.lastLapInvalid = state.lapInvalid;
+
+        // Lap 1 is a standing start; deleted laps never count as best
+        if ((state.completedLaps >= 1 || LAPS === 1) && !state.lapInvalid) {
+          state.bestLap = state.bestLap === null ? lapTime : Math.min(state.bestLap, lapTime);
+        }
+
+        state.lapInvalid = false;
+        state.completedLaps = completed;
+        state.lapStartedAt = state.elapsed;
+
+        if (completed >= LAPS) {
+          state.finishTime = state.elapsed;
+          state.finalTime = state.elapsed + state.penalty;
+
+          // Classification: penalty added to the time, unfinished cars projected
+          state.finishPosition =
+            1 +
+            opponents.filter(
+              (o) =>
+                (o.finishTime ??
+                  state.elapsed + Math.max(0, TOTAL - o.distance) / Math.max(o.speed, 20)) <
+                state.finalTime
+            ).length;
+
+          // Publish the complete classification before changing phase to "over".
+          // RaceResults watches for both phase === "over" and raceInfo.results.
+          raceInfo.results = buildFinalClassification({ state, opponents });
+          raceInfo.bestLap = state.bestLap;
+          raceInfo.penalty = state.penalty;
+          raceInfo.violations = state.violations;
+          raceInfo.finished = true;
+
+          // Keep the HUD position consistent with the final classification.
+          state.finishPosition =
+            raceInfo.results.find((row) => row.player)?.position ?? state.finishPosition;
+
+          say("CHEQUERED FLAG");
+          game.end();
+        }
+      }
+
+      const lapDistance = state.distance - state.completedLaps * TRACK_LENGTH;
+      const sector =
+        lapDistance < 0 ? 1 : Math.min(3, Math.floor((lapDistance / TRACK_LENGTH) * 3) + 1);
+
+      const forwardStep = sector === state.sector + 1 || (state.sector === 3 && sector === 1);
+
+      if (sector !== state.sector && forwardStep) {
+        state.sectorTimes[state.sector - 1] = state.elapsed - state.sectorStart;
+        state.sector = sector;
+        state.sectorStart = state.elapsed;
+      }
+    }
+
+    // ---- live leaderboard ----
+    state.leaderboardTimer += dt;
+
+    if (running && state.leaderboardTimer >= 0.2) {
+      state.leaderboardTimer = 0;
+
+      const racers = [
+        { ...DRIVERS[0], distance: state.distance, speed: playerSpeed },
+        ...opponents.map((o, i) => ({ ...DRIVERS[i + 1], distance: o.distance, speed: o.speed })),
+      ].sort((a, b) => b.distance - a.distance);
+
+      const leader = racers[0];
+
+      game.setLeaderboard(
+        racers.map((driver, index) => ({
+          ...driver,
+          position: index + 1,
+          progress: driver.distance,
+          gap:
+            index === 0
+              ? "LEADER"
+              : `+${(Math.max(0, leader.distance - driver.distance) / Math.max(leader.speed, 20)).toFixed(1)}s`,
+        }))
+      );
+    }
+
+    // ---- shared race info + HUD ----
+    const playerRank = 1 + opponents.filter((o) => o.distance > state.distance).length;
+    const currentLap = Math.min(LAPS, state.completedLaps + 1);
+
+    Object.assign(raceInfo, {
+      lap: currentLap,
+      laps: LAPS,
+      position: playerRank,
+      total: opponents.length + 1,
+      sector: state.sector,
+      lapTime: Math.max(0, (state.finishTime ?? state.elapsed) - state.lapStartedAt),
+      lastLap: state.lastLap,
+      bestLap: state.bestLap,
+      sectorTimes: state.sectorTimes,
+      elapsed: state.elapsed,
+      finished: state.finishTime !== null,
+      penalty: state.penalty,
+      violations: state.violations,
+      lapInvalid: state.lapInvalid,
+      finalTime: state.finalTime,
+      drsZone: inZone,
+      drsAvailable: track.drsAllowed,
+      gapAhead: Number.isFinite(gapAhead) ? gapAhead : null,
+    });
+
+    if (hudRef?.current) {
+      const best = state.bestLap !== null ? ` · BEST ${formatTime(state.bestLap)}` : "";
+      const pen = state.penalty ? ` · +${state.penalty}S` : "";
+
+      hudRef.current.textContent =
+        state.finishTime !== null
+          ? `FINISHED · P${state.finishPosition} · ${formatTime(state.finalTime)}${pen}`
+          : `P${playerRank}/6 · LAP ${currentLap}/${LAPS} · ${formatTime(state.elapsed)}${best}${pen}`;
+    }
+  });
+
+  // ==========================================
+  // RENDER
+  // ==========================================
+
+  return (
+    <>
+      {trackMeshes.map((geometry, index) => (
+        <mesh key={index} geometry={geometry} receiveShadow>
+          <meshStandardMaterial
+            vertexColors
+            side={THREE.DoubleSide}
+            roughness={0.92}
+            polygonOffset
+            polygonOffsetFactor={-index - 1}
+            polygonOffsetUnits={-index - 1}
+          />
+        </mesh>
+      ))}
+
+      <StartLine lightMats={lightMats} />
+      <GridBoxes />
+
+      <InstancedItems items={barrierItems}>
+        <boxGeometry args={[0.5, 1.2, BARRIER_LENGTH]} />
+      </InstancedItems>
+
+      <InstancedItems items={tyreItems}>
+        <cylinderGeometry args={[0.5, 0.5, 0.5, 14]} />
+      </InstancedItems>
+
+      <InstancedItems items={drsItems}>
+        <boxGeometry args={[0.3, 3, 5]} />
+      </InstancedItems>
+
+      {opponents.map((o, index) => {
+        const { x, z, yaw } = laneXZ(-(index + 1) * GRID_GAP, o.lane);
+
+        return (
+          <RigidBody
+            key={index}
+            ref={(b) => {
+              o.bodyRef.current = b;
+            }}
+            type="kinematicPosition"
+            colliders={false}
+            position={[x, 0.42, z]}
+            rotation={[0, yaw, 0]}
+            name={`ai-car-${index}`}
+            onCollisionEnter={() => handleAICollision(index)}
+            enabledRotations={[false, true, false]}
+            canSleep={false}
+          >
+            <CuboidCollider args={[1.03, 0.42, 2.7]} friction={0.9} restitution={0.02} />
+            <primitive object={o.object} />
+          </RigidBody>
+        );
+      })}
+    </>
+  );
+}

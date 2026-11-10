@@ -1,0 +1,147 @@
+/* APEX RACING - BROADCAST HUD (same class names, condensed) */
+
+.broadcast {
+  --red: #e10600;
+  --muted: #9aa4b2;
+  --panel: linear-gradient(90deg, rgba(10,14,21,.92), rgba(10,14,21,.72));
+  --cut: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  color: #fff;
+  font: 700 12px "Arial Narrow", "Roboto Condensed", Arial, sans-serif;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* shared glass panel */
+.timing-panel, .telemetry-panel, .top-stat, .broadcast-bottom {
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+}
+
+/* small labels */
+.top-stat small, .timing-race-info small, .gear-display small,
+.timing-footer, .telemetry-footer, .bottom-item, .leaderboard-driver small {
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  font-size: 10px;
+}
+
+/* ---------- branding ---------- */
+.broadcast-brand {
+  position: absolute; top: 24px; left: 28px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 25px; font-weight: 900; letter-spacing: 2px;
+  text-shadow: 0 2px 10px #000;
+}
+.broadcast-brand span:not(.brand-slash) { color: #ff3038; }
+.brand-slash { width: 8px; height: 35px; background: var(--red); transform: skew(-15deg); }
+.broadcast-brand small { position: absolute; top: 38px; left: 17px; font-size: 9px; letter-spacing: 3px; color: #c5cbd4; }
+
+/* ---------- top stats ---------- */
+.broadcast-top {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+}
+.top-stat {
+  min-width: 90px; padding: 10px 15px; display: flex; flex-direction: column; gap: 4px;
+  border-bottom: 2px solid var(--red);
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  text-align: center;
+}
+.top-stat strong { font-size: 22px; font-weight: 900; }
+.live-indicator { background: var(--red); padding: 11px 14px; font-size: 11px; font-weight: 900; border-radius: 3px; }
+.live-indicator span { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #fff; }
+.live-indicator.is-live span { animation: livePulse 1s infinite; }
+@keyframes livePulse { 50% { opacity: .2; } }
+
+/* ---------- timing tower ---------- */
+.timing-panel {
+  position: absolute; top: 105px; left: 20px; width: 270px;
+  border-left: 4px solid var(--red); clip-path: var(--cut);
+}
+.panel-heading {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 13px 14px; background: rgba(36,43,53,.9);
+  font-size: 12px; font-weight: 900; letter-spacing: 1.5px;
+}
+.timing-live { color: #ff4545; font-size: 10px; }
+
+.leaderboard-row {
+  display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 12px 0 8px;
+  border-bottom: 1px solid rgba(255,255,255,.07); transition: background .2s;
+}
+.leaderboard-position {
+  width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 3px;
+  background: #f2f4f7; color: #10151c; font-size: 14px; font-weight: 900;
+}
+.leaderboard-team-color { width: 4px; height: 24px; border-radius: 2px; flex-shrink: 0; }
+.leaderboard-driver { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.leaderboard-driver strong { font-size: 14px; font-weight: 900; letter-spacing: 1px; }
+.leaderboard-driver small { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.leaderboard-gap { font-size: 12px; font-weight: 800; color: #d8dce2; white-space: nowrap; }
+
+.player-row { background: linear-gradient(90deg, rgba(225,6,0,.38), rgba(225,6,0,.08)); }
+.player-row .leaderboard-position { background: var(--red); color: #fff; }
+
+.timing-race-info { display: flex; flex-direction: column; gap: 8px; padding: 13px 14px; }
+.timing-race-info strong { font-size: 11px; line-height: 1.5; }
+.timing-divider { height: 1px; background: rgba(255,255,255,.12); }
+.timing-footer, .telemetry-footer { display: flex; justify-content: space-between; }
+.timing-footer { padding: 10px 14px; }
+.timing-footer strong, .telemetry-footer strong { color: #fff; }
+
+/* ---------- telemetry ---------- */
+.telemetry-panel {
+  position: absolute; top: 105px; right: 20px; width: 220px; padding: 15px;
+  border-right: 4px solid var(--red); clip-path: var(--cut);
+}
+.telemetry-heading { font-size: 11px; font-weight: 900; letter-spacing: 1.5px; color: #aeb8c4; }
+.speed-display { display: flex; align-items: baseline; gap: 7px; margin-top: 12px; }
+.speed-display strong { font-size: 56px; font-weight: 900; line-height: 1; }
+.speed-display span { font-size: 12px; color: #aeb8c4; font-weight: 900; }
+
+.speed-bar, .ers-bar { height: 6px; margin-top: 12px; background: #2f3640; border-radius: 6px; overflow: hidden; }
+.speed-fill { height: 100%; background: linear-gradient(90deg, #00d2be, #f5c400 60%, var(--red)); transition: width .15s; }
+.ers-bar div { height: 100%; background: #00d2be; transition: width .3s; }
+
+.gear-display { display: flex; justify-content: space-between; margin-top: 18px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.gear-display div { display: flex; flex-direction: column; gap: 4px; }
+.gear-display strong { font-size: 28px; }
+.ers-section { margin-top: 14px; }
+.ers-label { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: 1px; }
+.telemetry-footer { margin-top: 16px; font-size: 10px; }
+
+/* ---------- bottom strip ---------- */
+.broadcast-bottom {
+  position: absolute; inset: auto 0 0 0; height: 40px;
+  display: flex; align-items: center; justify-content: center; gap: 45px;
+  border-top: 2px solid var(--red);
+}
+.bottom-item { display: flex; align-items: center; gap: 8px; letter-spacing: 1px; }
+.bottom-item strong { color: #fff; font-size: 10px; }
+.bottom-dot { width: 7px; height: 7px; border-radius: 50%; }
+.bottom-dot.green { background: #00dc79; box-shadow: 0 0 8px #00dc79; }
+
+.broadcast-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1100px) {
+  .broadcast-brand { display: none; }
+  .broadcast-bottom { gap: 15px; }
+  .timing-panel { width: 240px; }
+}
+@media (max-width: 700px) {
+  .timing-panel { top: 85px; left: 8px; width: 190px; }
+  .telemetry-panel { top: 85px; right: 8px; width: 160px; }
+  .broadcast-top { top: 8px; gap: 3px; }
+  .top-stat { min-width: 55px; padding: 6px 10px; }
+  .top-stat small { font-size: 8px; }
+  .top-stat strong { font-size: 15px; }
+  .leaderboard-row { height: 36px; gap: 6px; padding: 0 7px 0 5px; }
+  .leaderboard-gap { font-size: 9px; }
+  .broadcast-bottom { display: none; }
+}

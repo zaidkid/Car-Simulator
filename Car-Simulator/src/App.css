@@ -1,12 +1,443 @@
-.app {
-  text-align: center;
-  background-color: #000;
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap");
+
+:root {
+  font-family: "Inter", sans-serif;
   color: #fff;
-  height: 100vh;
+  background: #080b10;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
   overflow: hidden;
 }
 
-.title {
-  padding: 1rem;
-  font-size: 2rem;
+body {
+  background: #080b10;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #9aa6ad;
+  touch-action: none;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+/* =========================
+   RACING HUD
+========================= */
+
+.race-hud {
+  position: fixed;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 24px;
+  color: white;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 8, 13, 0.78),
+    rgba(5, 8, 13, 0)
+  );
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+
+.race-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.race-brand b {
+  color: #ff343b;
+}
+
+.brand-mark {
+  width: 5px;
+  height: 27px;
+  background: #e10600;
+  transform: skew(-15deg);
+}
+
+.hud-center {
+  display: flex;
+  gap: 10px;
+}
+
+.hud-stat {
+  min-width: 82px;
+  padding: 7px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(10, 13, 19, 0.62);
+  backdrop-filter: blur(10px);
+}
+
+.stat-label {
+  color: #aeb8c5;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.hud-stat strong {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.speed-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.speed-panel strong {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 35px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.speed-panel span {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #e1e5e9;
+}
+
+.race-position {
+  position: fixed;
+  z-index: 5;
+  top: 88px;
+  left: 22px;
+  padding: 10px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(8, 11, 16, 0.72);
+  color: #fff;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+/* =========================
+   START MENU
+========================= */
+
+.menu-overlay {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(3, 6, 10, 0.42);
+  backdrop-filter: blur(5px);
+}
+
+.menu-panel {
+  width: min(480px, 94vw);
+  padding: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 4px solid #e10600;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #171d27, #090d14);
+  box-shadow: 0 28px 100px rgba(0, 0, 0, 0.58);
+  text-align: left;
+}
+
+.menu-kicker {
+  margin-bottom: 12px;
+  color: #ff555a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 3px;
+}
+
+.menu-panel h1 {
+  margin: 0;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: clamp(48px, 9vw, 76px);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -1px;
+}
+
+.menu-panel h1 span {
+  color: #e10600;
+}
+
+.menu-panel p {
+  margin: 20px 0 26px;
+  color: #b8c0ca;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.start-button {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 19px;
+  border: 0;
+  border-radius: 6px;
+  background: #e10600;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.start-button:hover {
+  transform: translateY(-2px);
+  background: #ff2424;
+}
+
+.start-button span {
+  font-size: 22px;
+}
+
+.menu-footnote {
+  margin-top: 16px;
+  color: #707b89;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-align: center;
+}
+
+/* =========================
+   MOBILE RACING CONTROLS
+========================= */
+
+.mobile-controls {
+  display: none;
+}
+
+.control-left,
+.control-right {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.touch-control {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 76px;
+  height: 76px;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  border-radius: 50%;
+  background: rgba(12, 17, 26, 0.78);
+  color: white;
+  font-size: 25px;
+  font-weight: 900;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+
+.touch-control:active {
+  background: #e10600;
+  transform: scale(0.92);
+}
+
+.reverse-btn {
+  background: rgba(225, 6, 0, 0.68);
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.accelerate-btn {
+  width: 88px;
+  height: 88px;
+  background: rgba(0, 175, 90, 0.72);
+  font-size: 34px;
+}
+
+.steer-btn {
+  font-size: 30px;
+}
+
+/* =========================
+   MOBILE LANDSCAPE
+========================= */
+
+@media (max-width: 900px) and (orientation: landscape) {
+
+  .mobile-controls {
+    position: fixed;
+    z-index: 7;
+    inset: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 28px 30px;
+    pointer-events: none;
+    touch-action: none;
+  }
+
+  .control-left,
+  .control-right {
+    pointer-events: auto;
+  }
+
+  .touch-control {
+    min-width: 64px;
+    min-height: 64px;
+  }
+
+  .accelerate-btn {
+    width: 82px;
+    height: 82px;
+  }
+
+  .menu-panel {
+    width: min(440px, 80vw);
+    padding: 25px;
+  }
+
+  .menu-panel h1 {
+    font-size: 55px;
+  }
+
+  .menu-panel p {
+    margin: 12px 0 16px;
+    font-size: 11px;
+  }
+
+  .menu-footnote {
+    margin-top: 10px;
+  }
+}
+
+/* =========================
+   MOBILE PORTRAIT
+========================= */
+
+@media (max-width: 900px) and (orientation: portrait) {
+
+  .menu-panel {
+    padding: 28px 22px;
+  }
+
+  .menu-panel h1 {
+    font-size: 55px;
+  }
+}
+
+/* =========================
+   SMALL LANDSCAPE PHONES
+========================= */
+
+@media (max-width: 700px) and (orientation: landscape) {
+
+  .mobile-controls {
+    padding: 0 16px 14px;
+  }
+
+  .control-left,
+  .control-right {
+    gap: 10px;
+  }
+
+  .touch-control {
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    min-height: 60px;
+    font-size: 22px;
+  }
+
+  .reverse-btn {
+    font-size: 13px;
+  }
+
+  .accelerate-btn {
+    width: 70px;
+    height: 70px;
+    min-width: 70px;
+    min-height: 70px;
+    font-size: 29px;
+  }
+}
+
+/* =========================
+   SHORT SCREENS
+========================= */
+
+@media (max-height: 420px) and (orientation: landscape) {
+
+  .mobile-controls {
+    padding-bottom: 9px;
+  }
+
+  .touch-control {
+    width: 54px;
+    height: 54px;
+    min-width: 54px;
+    min-height: 54px;
+  }
+
+  .accelerate-btn {
+    width: 64px;
+    height: 64px;
+    min-width: 64px;
+    min-height: 64px;
+  }
 }
