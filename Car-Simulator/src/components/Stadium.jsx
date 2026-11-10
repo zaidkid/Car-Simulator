@@ -1,13 +1,14 @@
 import { useMemo, useRef, useLayoutEffect } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { curve } from "./Trackcurve";
 
-// APEX RACING - F1 trackside environment v4
+// APEX RACING - F1 trackside environment v5
 // Follows ./TrackCurve, so nothing overlaps other sections of the circuit.
-// New in v4: glass + concrete skyscrapers with crowns and spires, team-coloured
-// grandstand sections with fascia boards, flags, animated-look big screens,
-// a pedestrian bridge over the circuit, a glazed paddock building and a ring of
-// distant hills that fades into the fog.
+// New in v5: structures cast real shadows, waving team flags, a cleaner catch
+// fence (no more moire), glass + concrete towers with podiums and colour bands,
+// TV camera towers, a far city skyline, brighter fresh palette, and a blimp
+// circling over the circuit.
 
 const TRACK_OFFSET = 34; // distance from the centre line to the ad wall area
 const BASE = 3; // grandstands start this far beyond TRACK_OFFSET
@@ -33,17 +34,33 @@ const farMin = (x, z, t) => {
   return Math.sqrt(m);
 };
 
+// Centre and radius of the whole circuit (used by the hills, skyline and blimp)
+let CX = 0;
+let CZ = 0;
+trackPts.forEach((p) => {
+  CX += p.x;
+  CZ += p.z;
+});
+CX /= N;
+CZ /= N;
+
+let TRACK_R = 0;
+trackPts.forEach((p) => {
+  TRACK_R = Math.max(TRACK_R, Math.hypot(p.x - CX, p.z - CZ));
+});
+
 const rnd = (n) => {
   const x = Math.sin(n * 127.1) * 43758.5453;
   return x - Math.floor(x);
 };
 const pick = (arr, n) => arr[Math.floor(n) % arr.length];
 
-const SEAT = ["#2b3a52", "#3a4a63", "#1f2b3d", "#c9d1db"];
-const BLDG = ["#f2f4f7", "#e3e8ee", "#ffffff", "#d5dde6"];
-const GLASS = ["#ffffff", "#dbe8f5", "#c9dcef", "#eef4fa"];
-const GREENS = ["#2f6b34", "#3a7a3a", "#285c30", "#4a8540"];
-const GRASS = ["#3f7d3a", "#478a3f"];
+const SEAT = ["#2b4a7a", "#3a5f97", "#c43c3c", "#e9edf2", "#f2b134", "#1f2b3d"];
+const BLDG = ["#f4f1ea", "#e8ecf1", "#ffffff", "#f0dfc8", "#d8e4ee"];
+const GLASS = ["#ffffff", "#dbe8f5", "#c9dcef", "#eef4fa", "#d4f0f0"];
+const GREENS = ["#2f7a38", "#3f8f40", "#2a6a34", "#55a046", "#2f8a4a"];
+const GRASS = ["#4a8f3e", "#5aa24b"];
+const FAR = ["#c8d4e0", "#b9c8d8", "#d9e2ec", "#aebfd0"];
 const TIERS = [28, 44, 62];
 const TEAMS = ["#3671ff", "#e10600", "#ff8700", "#00d2be", "#0b1b3a"];
 
@@ -110,35 +127,46 @@ const adTex = (flip, repeat = 1) => {
   return t;
 };
 
-const crowdTex = tex(2048, 128, (g, w, h) => {
+const crowdTex = tex(2048, 256, (g, w, h) => {
   g.fillStyle = "#1b2433";
   g.fillRect(0, 0, w, h);
-  const shirts = ["#d9d9d9", "#b32b35", "#1f3a6e", "#e0b84d", "#2a2f38", "#8a99ad", "#19a59b", "#ff8700"];
-  const skins = ["#f1c9a5", "#c68e63", "#8d5a3b", "#e8b896"];
-  for (let x = 6; x < w; x += 18 + Math.random() * 10) {
-    if (Math.random() < 0.12) continue;
-    const y = h - 58 - Math.random() * 14;
-    g.fillStyle = shirts[Math.floor(Math.random() * shirts.length)];
-    g.fillRect(x, y + 20, 18, 60);
-    g.fillStyle = skins[Math.floor(Math.random() * skins.length)];
-    g.beginPath();
-    g.arc(x + 9, y + 10, 8, 0, Math.PI * 2);
-    g.fill();
-    if (Math.random() < 0.2) g.fillRect(x + 16, y + 4, 4, 22); // raised arm
+  const shirts = [
+    "#e6e6e6", "#d12f3a", "#2a4f9a", "#f0c24d", "#2a2f38",
+    "#8a99ad", "#19b5a8", "#ff8700", "#ffffff", "#3671ff",
+  ];
+  const skins = ["#f1c9a5", "#c68e63", "#8d5a3b", "#e8b896", "#5e3b26"];
+
+  // two rows of people so the stands look full
+  for (let row = 0; row < 2; row++) {
+    for (let x = 6; x < w; x += 30 + Math.random() * 18) {
+      if (Math.random() < 0.08) continue;
+      const y = h - 150 - row * 34 - Math.random() * 20;
+
+      g.fillStyle = shirts[Math.floor(Math.random() * shirts.length)];
+      g.fillRect(x, y + 36, 34, 110);
+
+      g.fillStyle = skins[Math.floor(Math.random() * skins.length)];
+      g.beginPath();
+      g.arc(x + 17, y + 20, 15, 0, Math.PI * 2);
+      g.fill();
+
+      if (Math.random() < 0.25) g.fillRect(x + 30, y + 6, 7, 40); // raised arm
+    }
   }
 });
 
+// Catch fence: dark diamond mesh on a transparent background. Cells are large
+// enough to avoid shimmering at distance.
 const netTex = tex(64, 64, (g, w, h) => {
-  g.fillStyle = "#000";
-  g.fillRect(0, 0, w, h);
-  g.strokeStyle = "#fff";
-  g.lineWidth = 5;
+  g.clearRect(0, 0, w, h);
+  g.strokeStyle = "#1b1f26";
+  g.lineWidth = 6;
   g.beginPath();
   g.moveTo(0, 0); g.lineTo(w, h);
   g.moveTo(w, 0); g.lineTo(0, h);
   g.stroke();
 });
-netTex.repeat.set(LEN / 1.2, 5 / 1.2);
+netTex.repeat.set(LEN / 2.4, 5 / 2.4);
 
 // Big screen content
 const screenTex = tex(512, 256, (g, w, h) => {
@@ -225,10 +253,33 @@ const GEOS = {
   box: new THREE.BoxGeometry(1, 1, 1),
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
   ico: new THREE.IcosahedronGeometry(0.5, 1),
+  // extra segments along z so a flag can ripple
+  flag: new THREE.BoxGeometry(1, 1, 1, 1, 1, 12),
 };
 
-function Instanced({ items, geo = "box", color = "#fff", ...mat }) {
+// Flag ripple: grows from the pole (z = -0.5) to the free edge (z = +0.5)
+const waveShader = (uTime) => (shader) => {
+  shader.uniforms.uTime = uTime;
+  shader.vertexShader =
+    "uniform float uTime;\n" +
+    shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+       float wv = position.z + 0.5;
+       float ph = instanceMatrix[3].x * 0.05 + instanceMatrix[3].z * 0.05;
+       transformed.x += sin(position.z * 7.0 + uTime * 4.0 + ph) * 14.0 * wv;
+       transformed.y += sin(position.z * 5.0 + uTime * 3.0 + ph) * 0.12 * wv;`
+    );
+};
+
+function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = false, ...mat }) {
   const ref = useRef();
+  const uTime = useMemo(() => ({ value: 0 }), []);
+  const onBeforeCompile = useMemo(() => (wave ? waveShader(uTime) : undefined), [wave, uTime]);
+
+  useFrame((_, delta) => {
+    if (wave) uTime.value += Math.min(delta, 0.1);
+  });
 
   useLayoutEffect(() => {
     const m = ref.current;
@@ -258,52 +309,63 @@ function Instanced({ items, geo = "box", color = "#fff", ...mat }) {
       args={[GEOS[geo], undefined, items.length]}
       frustumCulled={false}
       receiveShadow
+      castShadow={cast}
     >
-      <meshStandardMaterial {...mat} />
+      <meshStandardMaterial
+        {...mat}
+        onBeforeCompile={onBeforeCompile}
+        customProgramCacheKey={() => (wave ? "stadium-wave" : "stadium-plain")}
+      />
     </instancedMesh>
   );
 }
 
+// cast: true = this part throws shadows (the sun follows the car, so only the
+// area around it is ever drawn into the shadow map)
 const MATS = {
-  grass: { color: "#3f7d3a", roughness: 1 },
+  grass: { color: "#4a8f3e", roughness: 1 },
   adsP: { map: adTex(false), roughness: 0.35 },
   adsN: { map: adTex(true), roughness: 0.35 },
-  net: { color: "#222", alphaMap: netTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1 },
-  fpost: { geo: "cyl", color: "#2b333d", metalness: 0.7, roughness: 0.4 },
+  net: { map: netTex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 1 },
+  fpost: { geo: "cyl", color: "#2b333d", metalness: 0.7, roughness: 0.4, cast: true },
   seats: { roughness: 0.8 },
   crowd: { map: crowdTex, roughness: 1 },
-  rear: { color: "#2a3340" },
-  posts: { geo: "cyl", color: "#dfe4ea", metalness: 0.6, roughness: 0.4 },
-  steel: { color: "#aab4c0", metalness: 0.6, roughness: 0.4 },
-  roof: { color: "#f3f5f7", emissive: "#2a2d33", roughness: 0.6, side: THREE.DoubleSide },
+  rear: { color: "#2a3340", cast: true },
+  posts: { geo: "cyl", color: "#dfe4ea", metalness: 0.6, roughness: 0.4, cast: true },
+  steel: { color: "#aab4c0", metalness: 0.6, roughness: 0.4, cast: true },
+  roof: { color: "#f3f5f7", emissive: "#2a2d33", roughness: 0.6, side: THREE.DoubleSide, cast: true },
   roofUnder: { color: "#9aa4b0", roughness: 0.8 },
   fascia: { roughness: 0.45 },
   flagpoles: { geo: "cyl", color: "#e8ecf1", metalness: 0.6, roughness: 0.4 },
-  flags: { roughness: 0.8, side: THREE.DoubleSide },
-  paddock: { color: "#dfe5ec", roughness: 0.7 },
+  flags: { geo: "flag", wave: true, roughness: 0.8, side: THREE.DoubleSide, cast: true },
+  paddock: { color: "#dfe5ec", roughness: 0.7, cast: true },
   paddockGlass: { color: "#1d2f45", metalness: 0.6, roughness: 0.15 },
-  paddockRoof: { color: "#c7cfd8", roughness: 0.6 },
+  paddockRoof: { color: "#c7cfd8", roughness: 0.6, cast: true },
   garage: { roughness: 0.5 },
-  bridge: { color: "#e6ebf0", metalness: 0.4, roughness: 0.45 },
+  bridge: { color: "#e6ebf0", metalness: 0.4, roughness: 0.45, cast: true },
   bridgeBanner: { map: adTex(false, 6), roughness: 0.4 },
-  trunks: { geo: "cyl", color: "#4a3524", roughness: 1 },
-  leaves: { geo: "ico", roughness: 1 },
-  b0: { map: facadeTex("concrete", TIERS[0]), roughness: 0.65 },
-  b1: { map: facadeTex("concrete", TIERS[1]), roughness: 0.65 },
-  b2: { map: facadeTex("concrete", TIERS[2]), roughness: 0.65 },
-  g0: { map: facadeTex("glass", TIERS[0]), metalness: 0.35, roughness: 0.28 },
-  g1: { map: facadeTex("glass", TIERS[1]), metalness: 0.35, roughness: 0.28 },
-  g2: { map: facadeTex("glass", TIERS[2]), metalness: 0.35, roughness: 0.28 },
-  crowns: { color: "#4b5561", roughness: 0.8 },
+  trunks: { geo: "cyl", color: "#4a3524", roughness: 1, cast: true },
+  leaves: { geo: "ico", roughness: 1, cast: true },
+  b0: { map: facadeTex("concrete", TIERS[0]), roughness: 0.65, cast: true },
+  b1: { map: facadeTex("concrete", TIERS[1]), roughness: 0.65, cast: true },
+  b2: { map: facadeTex("concrete", TIERS[2]), roughness: 0.65, cast: true },
+  g0: { map: facadeTex("glass", TIERS[0]), metalness: 0.35, roughness: 0.28, cast: true },
+  g1: { map: facadeTex("glass", TIERS[1]), metalness: 0.35, roughness: 0.28, cast: true },
+  g2: { map: facadeTex("glass", TIERS[2]), metalness: 0.35, roughness: 0.28, cast: true },
+  crowns: { color: "#4b5561", roughness: 0.8, cast: true },
+  podium: { roughness: 0.75, cast: true },
+  accent: { roughness: 0.4 },
   spires: { geo: "cyl", color: "#cfd6de", metalness: 0.7, roughness: 0.3 },
-  poles: { geo: "cyl", color: "#e0e5eb", metalness: 0.7 },
+  poles: { geo: "cyl", color: "#e0e5eb", metalness: 0.7, cast: true },
   lamps: { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 2 },
+  skyline: { roughness: 0.9 },
   screens: {
     map: screenTex,
     emissiveMap: screenTex,
     emissive: "#ffffff",
     emissiveIntensity: 0.9,
     roughness: 0.4,
+    cast: true,
   },
 };
 
@@ -397,7 +459,7 @@ function generate() {
         if (isMain ? i % 6 === 3 : i % 18 === 3) add("screens", oEnd, roofH - 3.5, [0.5, 4, 9]);
       }
 
-      // team flags between the ad wall and the fence
+      // team flags between the ad wall and the fence (they wave in the wind)
       if (i % 3 === 0 && (stand || isMain)) {
         add("flagpoles", -3, 3.5, [0.12, 7, 0.12]);
         add("flags", -3, 6.1, [0.04, 1.5, 2.8], pick(TEAMS, i + side + 3), 1.4);
@@ -417,12 +479,12 @@ function generate() {
             to + (rnd(seed + b * 3) - 0.5) * 2,
             5 + rnd(seed + b * 5) * 1.5,
             [w, w * 0.85, w],
-            pick(GREENS, rnd(seed + b) * 4),
+            pick(GREENS, rnd(seed + b) * 5),
             dt + (rnd(seed + b * 7) - 0.5) * 2
           );
       }
 
-      // skyline: glass and concrete towers with crowns and spires
+      // skyline: glass and concrete towers with podium, colour band, crown and spire
       const bo = 40 + rnd(seed + 23) * 70;
 
       if (i % 2 === 0 && !tight(200) && free(bo, 45)) {
@@ -436,8 +498,11 @@ function generate() {
           bo,
           height / 2,
           [bw, height, bw],
-          pick(glass ? GLASS : BLDG, rnd(seed + 29) * 4)
+          pick(glass ? GLASS : BLDG, rnd(seed + 29) * 5)
         );
+
+        add("podium", bo, 2.5, [bw + 9, 5, bw + 9], pick(BLDG, rnd(seed + 31) * 5)); // low base block
+        add("accent", bo, height * 0.8, [bw + 0.5, 1.6, bw + 0.5], pick(TEAMS, rnd(seed + 47) * 5)); // colour band
 
         add("crowns", bo, height + 0.6, [bw + 1.2, 1.2, bw + 1.2]); // roof slab
         add("crowns", bo, height + 2.4, [bw * 0.4, 2.4, bw * 0.4]); // plant room
@@ -447,12 +512,37 @@ function generate() {
         }
       }
 
+      // TV camera towers
+      if (i % 22 === 11 && free(22, 34)) {
+        add("poles", 22, 9, [1.4, 18, 1.4]);
+        add("rear", 22, 18.4, [6, 1.2, 6]);
+        add("paddockGlass", 22, 20, [5.4, 1.8, 5.4]);
+        add("paddockRoof", 22, 21.1, [6.4, 0.4, 6.4]);
+        add("spires", 22, 24, [0.3, 5, 0.3]);
+      }
+
       // floodlight towers
       if (i % 8 === 4 && free(24, 30)) {
         add("poles", 24, 17, [0.7, 34, 0.7]);
         add("lamps", 24, 34, [6, 1.2, 2]);
       }
     }
+  }
+
+  // ---------- far city skyline (soft blue-grey, melts into the fog) ----------
+  const FAR_COUNT = 90;
+  for (let k = 0; k < FAR_COUNT; k++) {
+    const a = (k / FAR_COUNT) * Math.PI * 2 + (rnd(k * 3.1) - 0.5) * 0.06;
+    const rad = TRACK_R + 240 + rnd(k * 5.7) * 170;
+    const w = 24 + rnd(k * 7.3) * 34;
+    const h = 45 + Math.pow(rnd(k * 11.9), 2) * 130;
+
+    g.skyline.push({
+      p: [CX + rad * Math.cos(a), h / 2, CZ + rad * Math.sin(a)],
+      s: [w, h, w * (0.7 + rnd(k * 2.3) * 0.6)],
+      ry: a + rnd(k * 1.7),
+      c: pick(FAR, rnd(k * 13.3) * 4),
+    });
   }
 
   // ---------- pedestrian bridge over the circuit ----------
@@ -491,21 +581,7 @@ function generate() {
 
 // ---------- distant hills (fade into the fog) ----------
 function makeHills() {
-  let cx = 0;
-  let cz = 0;
-  trackPts.forEach((p) => {
-    cx += p.x;
-    cz += p.z;
-  });
-  cx /= N;
-  cz /= N;
-
-  let R = 0;
-  trackPts.forEach((p) => {
-    R = Math.max(R, Math.hypot(p.x - cx, p.z - cz));
-  });
-
-  const inner = R + 450;
+  const inner = TRACK_R + 450;
   const outer = inner + 900;
   const SEG = 192;
   const RINGS = 10;
@@ -514,8 +590,8 @@ function makeHills() {
   const col = [];
   const idx = [];
 
-  const low = new THREE.Color("#456f3f");
-  const high = new THREE.Color("#8e9d92");
+  const low = new THREE.Color("#4f8f45");
+  const high = new THREE.Color("#9fb6c8");
   const tmp = new THREE.Color();
 
   for (let r = 0; r <= RINGS; r++) {
@@ -538,7 +614,7 @@ function makeHills() {
       // +1 keeps the edges just above the ground plane (no z-fighting)
       const y = 1 + 120 * h * bump * (0.9 + 0.1 * Math.sin(rad * 0.02 + a * 5));
 
-      pos.push(cx + rad * Math.cos(a), y, cz + rad * Math.sin(a));
+      pos.push(CX + rad * Math.cos(a), y, CZ + rad * Math.sin(a));
 
       tmp.copy(low).lerp(high, THREE.MathUtils.clamp(y / 110, 0, 1));
       col.push(tmp.r, tmp.g, tmp.b);
@@ -565,6 +641,77 @@ function makeHills() {
   return geometry;
 }
 
+// ---------- blimp circling over the circuit ----------
+function Blimp({ altitude = 150, speed = 0.02 }) {
+  const ref = useRef();
+  const angle = useRef(Math.random() * Math.PI * 2);
+  const radius = Math.max(140, TRACK_R * 0.8);
+
+  const skin = useMemo(
+    () =>
+      tex(1024, 256, (g, w, h) => {
+        g.fillStyle = "#f4f6f9";
+        g.fillRect(0, 0, w, h);
+
+        g.fillStyle = "#1e4fa3";
+        g.fillRect(0, h * 0.62, w, h * 0.12);
+        g.fillStyle = "#e10600";
+        g.fillRect(0, h * 0.74, w, h * 0.06);
+
+        // sides of the ellipsoid sit at u = 0.25 and u = 0.75
+        g.fillStyle = "#e10600";
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.font = "italic 900 78px Arial";
+        g.fillText("APEX RACING", w * 0.25, h * 0.4);
+        g.fillText("APEX RACING", w * 0.75, h * 0.4);
+      }),
+    []
+  );
+
+  useFrame((_, delta) => {
+    const b = ref.current;
+    if (!b) return;
+
+    angle.current += Math.min(delta, 0.1) * speed;
+    const a = angle.current;
+
+    b.position.set(
+      CX + Math.cos(a) * radius,
+      altitude + Math.sin(a * 5) * 3,
+      CZ + Math.sin(a) * radius
+    );
+
+    // nose points along the direction of travel
+    b.rotation.y = -Math.atan2(Math.cos(a), -Math.sin(a));
+  });
+
+  return (
+    <group ref={ref}>
+      <mesh scale={[26, 8, 8]}>
+        <sphereGeometry args={[1, 32, 16]} />
+        <meshStandardMaterial map={skin} roughness={0.5} />
+      </mesh>
+
+      {/* tail fins */}
+      <mesh position={[-22, 0, 0]} scale={[6, 0.4, 9]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#e10600" roughness={0.5} />
+      </mesh>
+      <mesh position={[-22, 0, 0]} scale={[6, 9, 0.4]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#e10600" roughness={0.5} />
+      </mesh>
+
+      {/* gondola */}
+      <mesh position={[2, -8.4, 0]} scale={[9, 2.4, 3.2]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#2a3340" roughness={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
 export default function Stadium() {
   const env = useMemo(generate, []);
   const hills = useMemo(makeHills, []);
@@ -574,6 +721,8 @@ export default function Stadium() {
       <mesh geometry={hills}>
         <meshStandardMaterial vertexColors roughness={1} side={THREE.DoubleSide} />
       </mesh>
+
+      <Blimp />
 
       {Object.entries(MATS).map(([k, m]) => (
         <Instanced key={k} items={env[k]} {...m} />

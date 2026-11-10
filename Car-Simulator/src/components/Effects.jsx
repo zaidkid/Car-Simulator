@@ -1,61 +1,29 @@
-import { useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
 import {
   EffectComposer,
   Bloom,
   Vignette,
   ToneMapping,
-  ChromaticAberration,
   HueSaturation,
   BrightnessContrast,
+  SMAA,
 } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import * as THREE from "three";
 
-import { telemetry } from "./Telemetry";
-
-// Put <Effects /> inside <Canvas>, after the scene content.
+// Optional. Put <Effects /> inside <Canvas>, after your scene content.
+// Needs:  npm install @react-three/postprocessing postprocessing
+//
+// Bloom only picks up HDR values (threshold 1): start lights and sun glints.
+// A little saturation and contrast keeps the image fresh and punchy, and SMAA
+// cleans up the shimmering fences and kerbs.
 export default function Effects() {
-  const chroma = useRef();
-  const vignette = useRef();
-
-  const chromaOffset = useMemo(
-    () => new THREE.Vector2(0.0004, 0.0004),
-    []
-  );
-
-  // Speed makes the edges of the screen softer and darker.
-  useFrame(() => {
-    const speed = Math.min(telemetry.speed / 95, 1);
-    const boost = telemetry.ers ? 0.0004 : 0;
-    const amount = 0.0004 + speed * speed * 0.0011 + boost;
-
-    if (chroma.current) {
-      chroma.current.offset.set(amount, amount);
-    }
-
-    if (vignette.current) {
-      vignette.current.darkness = 0.45 + speed * 0.3;
-    }
-  });
-
   return (
-    <EffectComposer multisampling={4}>
-      <Bloom
-        intensity={0.55}
-        luminanceThreshold={0.85}
-        luminanceSmoothing={0.2}
-        mipmapBlur
-      />
-
-      <ChromaticAberration ref={chroma} offset={chromaOffset} />
-
-      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-
-      <HueSaturation saturation={0.08} />
-      <BrightnessContrast contrast={0.08} />
-
-      <Vignette ref={vignette} offset={0.3} darkness={0.5} />
+    <EffectComposer multisampling={0}>
+      <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.2} intensity={0.6} />
+      <ToneMapping mode={ToneMappingMode.NEUTRAL ?? ToneMappingMode.ACES_FILMIC} />
+      <HueSaturation saturation={0.18} />
+      <BrightnessContrast contrast={0.06} />
+      <Vignette offset={0.35} darkness={0.4} />
+      <SMAA />
     </EffectComposer>
   );
 }

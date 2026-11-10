@@ -717,7 +717,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     const ersOn =
       canDrive &&
-      k.shift &&
+      (k.shift || m.ers) &&
       throttleIn &&
       c.battery > 0.5 &&
       v > 5;
@@ -725,7 +725,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const drsOn =
       canDrive &&
       track.drsAllowed &&
-      k.e &&
+      (k.e || m.drs) &&
       throttleIn &&
       !brakeIn &&
       v > 40;

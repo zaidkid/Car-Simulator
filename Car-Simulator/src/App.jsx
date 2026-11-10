@@ -4,6 +4,7 @@ import { Physics } from "@react-three/rapier";
 import { useGLTF } from "@react-three/drei";
 
 import "./App.css";
+import "./mobile.css";
 
 import Car from "./components/Car";
 import Ground from "./components/Ground";
@@ -21,8 +22,9 @@ import RaceResults from "./components/Raceresults";
 import { game, useGame } from "./components/gameStore";
 
 // Start fetching the main car asset as soon as this module is loaded.
-// Race.jsx may also call this; calling preload more than once is safe.
 useGLTF.preload("/models/Red_bull_car.glb");
+
+const PHONE = matchMedia("(pointer: coarse)").matches;
 
 function GameLoop() {
   useFrame((_, delta) => {
@@ -32,8 +34,7 @@ function GameLoop() {
   return null;
 }
 
-// This component mounts only after everything inside the shared Suspense
-// boundary has finished loading.
+// Mounts only after everything inside the shared Suspense boundary has loaded.
 function SceneReady({ onReady }) {
   useEffect(() => {
     onReady();
@@ -42,22 +43,12 @@ function SceneReady({ onReady }) {
   return null;
 }
 
-// Mobile touch controls
+// ---------- Mobile touch controls ----------
+
+// Hold-to-press button (steer, gas, brake, ERS, DRS)
 function ControlButton({ label, field, mobileRef, className = "" }) {
-  const handleDown = (event) => {
-    event.preventDefault();
-    mobileRef.current[field] = true;
-
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture may not be available on every device.
-    }
-  };
-
-  const handleUp = (event) => {
-    event.preventDefault();
-    mobileRef.current[field] = false;
+  const set = (on) => {
+    mobileRef.current[field] = on;
   };
 
   return (
@@ -65,20 +56,67 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
       type="button"
       className={`touch-control ${className}`}
       aria-label={label}
-      onPointerDown={handleDown}
-      onPointerUp={handleUp}
-      onPointerCancel={handleUp}
-      onLostPointerCapture={() => {
-        mobileRef.current[field] = false;
+      onPointerDown={(e) => {
+        e.preventDefault();
+        set(true);
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {}
       }}
-      onContextMenu={(event) => event.preventDefault()}
+      onPointerUp={(e) => {
+        e.preventDefault();
+        set(false);
+      }}
+      onPointerCancel={() => set(false)}
+      onLostPointerCapture={() => set(false)}
+      onContextMenu={(e) => e.preventDefault()}
     >
       {label}
     </button>
   );
 }
 
-// Start menu
+// One-shot key press (camera / reset), handled by FollowCamera and Car
+function TapButton({ label, keyName }) {
+  return (
+    <button
+      type="button"
+      className="touch-control"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: keyName }));
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {label}
+    </button>
+  );
+}
+
+// [label, field, class]
+const TOUCH = {
+  left: [
+    ["◀", "left", "steer-btn"],
+    ["▶", "right", "steer-btn"],
+  ],
+  right: [
+    ["ERS", "ers", "mini-btn"],
+    ["DRS", "drs", "mini-btn"],
+    ["BRAKE", "backward", "reverse-btn"],
+    ["GAS", "forward", "accelerate-btn"],
+  ],
+};
+
+// Fullscreen + landscape lock (Android Chrome; iOS ignores it)
+const enterLandscape = async () => {
+  try {
+    await document.documentElement.requestFullscreen?.();
+    await screen.orientation?.lock?.("landscape");
+  } catch {}
+};
+
+// ---------- Start menu ----------
+
 function RaceMenu({ sceneReady }) {
   const { phase } = useGame();
 
@@ -118,7 +156,10 @@ function RaceMenu({ sceneReady }) {
           className="start-button"
           disabled={!sceneReady}
           onClick={() => {
-            if (sceneReady) game.start();
+            if (sceneReady) {
+              enterLandscape();
+              game.start();
+            }
           }}
         >
           {sceneReady ? "START GRAND PRIX" : "PREPARING CIRCUIT..."}
@@ -155,6 +196,8 @@ const EMPTY_CONTROLS = () => ({
   backward: false,
   left: false,
   right: false,
+  ers: false,
+  drs: false,
 });
 
 export default function App() {
@@ -212,7 +255,7 @@ export default function App() {
     <main className="app-shell">
       <Canvas
         shadows
-        dpr={[1, 1.25]}
+        dpr={[1, PHONE ? 1 : 1.25]}
         gl={{
           antialias: false,
           powerPreference: "high-performance",
@@ -255,7 +298,7 @@ export default function App() {
       {/* RACING HUD */}
       <BroadcastHUD speedRef={speedRef} raceRef={raceRef} />
       <CockpitDash />
-      <MiniMap />
+      <MiniMap size={PHONE ? 110 : 220} />
       <StartCountdown />
 
       {/* MENUS */}
@@ -264,35 +307,28 @@ export default function App() {
 
       {/* MOBILE TOUCH CONTROLS */}
       <div className="mobile-controls">
-        <div className="control-left">
-          <ControlButton
-            label="REV"
-            field="backward"
-            mobileRef={mobileRef}
-            className="reverse-btn"
-          />
-          <ControlButton
-            label="◀"
-            field="left"
-            mobileRef={mobileRef}
-            className="steer-btn"
-          />
-        </div>
+        {Object.entries(TOUCH).map(([side, buttons]) => (
+          <div key={side} className={`control-${side}`}>
+            {buttons.map(([label, field, cls]) => (
+              <ControlButton
+                key={label}
+                label={label}
+                field={field}
+                className={cls}
+                mobileRef={mobileRef}
+              />
+            ))}
+          </div>
+        ))}
 
-        <div className="control-right">
-          <ControlButton
-            label="▲"
-            field="forward"
-            mobileRef={mobileRef}
-            className="accelerate-btn"
-          />
-          <ControlButton
-            label="▶"
-            field="right"
-            mobileRef={mobileRef}
-            className="steer-btn"
-          />
+        <div className="tap-group">
+          <TapButton label="CAM" keyName="c" />
+          <TapButton label="RESET" keyName="r" />
         </div>
+      </div>
+
+      <div className="rotate-notice">
+        <span>⟳</span>ROTATE YOUR PHONE TO LANDSCAPE
       </div>
     </main>
   );

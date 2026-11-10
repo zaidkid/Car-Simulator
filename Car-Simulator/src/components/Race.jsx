@@ -35,6 +35,22 @@ const DRS_RULES = true; // false = DRS anywhere
 const DRS_FROM_LAP = 2;
 const DRS_GAP = 1.0; // seconds to the car ahead
 
+// ---- AI field: every AI gets a different pace each race ----
+// pace is 0 (slowest) .. 1 (fastest). Paces are shuffled across the five AI
+// cars at the start of every race, so the grid order says nothing about who is quick.
+const AI_SPEED_MIN = 82; // m/s top speed of the slowest AI  (~295 km/h)
+const AI_SPEED_MAX = 86.5; // m/s top speed of the fastest AI (~311 km/h)
+const AI_GRIP_MIN = 0.915; // cornering grip scale of the slowest AI
+const AI_GRIP_MAX = 0.99; // cornering grip scale of the fastest AI
+const PACE_JITTER = 0.24; // random +/- spread added on top of the shuffled pace
+
+// ---- AI racecraft ----
+const PASS_LOOKAHEAD = 24; // m: how far ahead an AI looks for a slower car
+const PASS_CLEARANCE = 3.6; // m: sideways gap used when going around a car
+const LAT_LIMIT = TRACK_WIDTH - 1.6; // AI never goes wider than this
+const RUBBER_BAND = 0.025; // 0 = off. +/- this fraction of speed to keep the race close to the player
+const RUBBER_RANGE = 250; // m of gap to the player at which rubber-banding is at full strength
+
 const AI_COLORS = ["#3671ff", "#e10600", "#ff8700", "#e10600", "#00d2be"];
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -425,6 +441,59 @@ const freshRules = () => ({
   finalTime: null,
 });
 
+// ---- AI field generation ----
+
+// Evenly spread paces (slowest .. fastest), shuffled between the AI cars,
+// with a little random jitter so no two races have the same running order.
+function rollField(count) {
+  const base = Array.from({ length: count }, (_, i) => (count === 1 ? 0.5 : i / (count - 1)));
+
+  for (let i = base.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [base[i], base[j]] = [base[j], base[i]];
+  }
+
+  return base.map((p) => THREE.MathUtils.clamp(p + (Math.random() - 0.5) * PACE_JITTER, 0, 1));
+}
+
+// Put an AI car back on the grid with a fresh personality for this race
+function resetDriver(o, index, pace) {
+  Object.assign(o, {
+    // grid
+    distance: -(index + 1) * GRID_GAP,
+    speed: 0,
+    laneOffset: 0,
+    lat: o.lane,
+    finishTime: null,
+
+    // pace / personality
+    pace,
+    maxSpeed: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
+    gripScale: AI_GRIP_MIN + pace * (AI_GRIP_MAX - AI_GRIP_MIN),
+    power: 0.93 + pace * 0.09,
+    reaction: 0.05 + Math.random() * 0.3, // seconds before the car reacts to the lights going out
+    form: 1,
+    formTarget: 1,
+    formTimer: 3 + Math.random() * 5,
+    mistake: 0,
+    mistakeSeverity: 0,
+    mistakeIn: (12 + Math.random() * 22) * (0.7 + pace * 0.8),
+
+    // overtaking
+    passSide: 0,
+    passHold: 0,
+    passTarget: 0,
+    passOffset: 0,
+
+    // collision reaction
+    impactTimer: 0,
+    impactDirection: 0,
+    impactOffset: 0,
+    impactYaw: 0,
+    collisionCooldown: 0,
+  });
+}
+
 // Build the final six-driver classification before ending the game.
 // AI cars that have not crossed the line receive a projected finish time.
 function buildFinalClassification({ state, opponents }) {
@@ -475,40 +544,31 @@ export default function Race({ carRef, hudRef }) {
   const lightMats = useRef([]);
 
   // AI OPPONENTS
-  const opponents = useMemo(
-    () =>
-      AI_COLORS.map((color, index) => {
-        const teamColor = new THREE.Color(color);
+  const opponents = useMemo(() => {
+    const paces = rollField(AI_COLORS.length);
 
-        const object = prepareCarModel(scene, (m) => {
-          const hsl = {};
-          m.color?.getHSL(hsl);
+    return AI_COLORS.map((color, index) => {
+      const teamColor = new THREE.Color(color);
 
-          if (m.color && hsl.s > 0.12 && hsl.l > 0.16 && hsl.l < 0.88) {
-            m.color.copy(teamColor).multiplyScalar(Math.max(0.72, hsl.l * 1.35));
-          }
-        });
+      const object = prepareCarModel(scene, (m) => {
+        const hsl = {};
+        m.color?.getHSL(hsl);
 
-        return {
-          object,
-          bodyRef: { current: null },
-          distance: -(index + 1) * GRID_GAP,
-          speed: 0,
-          maxSpeed: 84 + (index % 3) * 2, // 302 to 310 km/h
-          gripScale: 0.94 + index * 0.012,
-          power: 0.94 + (index % 3) * 0.03,
-          lane: index % 2 === 0 ? -3 : 3,
-          laneOffset: 0,
-          finishTime: null,
-          impactTimer: 0,
-          impactDirection: 0,
-          impactOffset: 0,
-          impactYaw: 0,
-          collisionCooldown: 0,
-        };
-      }),
-    [scene]
-  );
+        if (m.color && hsl.s > 0.12 && hsl.l > 0.16 && hsl.l < 0.88) {
+          m.color.copy(teamColor).multiplyScalar(Math.max(0.72, hsl.l * 1.35));
+        }
+      });
+
+      const o = {
+        object,
+        bodyRef: { current: null },
+        lane: index % 2 === 0 ? -3 : 3,
+      };
+
+      resetDriver(o, index, paces[index]);
+      return o;
+    });
+  }, [scene]);
 
   const race = useRef({
     phase: "ready",
@@ -590,18 +650,11 @@ export default function Race({ carRef, hudRef }) {
 
     // ---- new race ----
     if (running && state.phase !== "playing") {
+      // New pace order for every race
+      const paces = rollField(opponents.length);
+
       opponents.forEach((o, index) => {
-        Object.assign(o, {
-          distance: -(index + 1) * GRID_GAP,
-          speed: 0,
-          laneOffset: 0,
-          finishTime: null,
-          impactTimer: 0,
-          impactDirection: 0,
-          impactOffset: 0,
-          impactYaw: 0,
-          collisionCooldown: 0,
-        });
+        resetDriver(o, index, paces[index]);
 
         const { x, z, yaw } = laneXZ(o.distance, o.lane);
 
@@ -634,6 +687,8 @@ export default function Race({ carRef, hudRef }) {
 
       raceInfo.message = "";
       raceInfo.results = null;
+      raceInfo.lapTimes = []; // MOBILE-FIX (A)
+      raceInfo.topSpeed = 0; // MOBILE-FIX (A)
       raceInfo.finished = false;
       grid.go = false;
       grid.lights = 0;
@@ -686,23 +741,122 @@ export default function Race({ carRef, hudRef }) {
 
     state.elapsed += dt;
 
+    // Player speed (needed by the AI so it can react to the player's car)
+    const lv = body.linvel();
+    const playerSpeed = Math.hypot(lv.x, lv.z);
+
+    // Top speed for the results screen (km/h)
+    if (racing) raceInfo.topSpeed = Math.max(raceInfo.topSpeed || 0, playerSpeed * 3.6); // MOBILE-FIX (B)
+
     // ---- AI opponents ----
     opponents.forEach((o, oi) => {
       const AI_BRAKE = 38;
 
       if (racing) {
-        const target = brakingTarget(o.distance, o.maxSpeed, o.gripScale, AI_BRAKE);
-
-        if (o.speed > target) {
-          o.speed = Math.max(target, o.speed - AI_BRAKE * dt);
-        } else {
-          const acceleration = THREE.MathUtils.clamp(14 - 0.11 * o.speed, 2.5, 12.5) * o.power;
-          o.speed = Math.min(target, o.speed + acceleration * dt);
+        // Random form: pace drifts a little up and down during the race
+        o.formTimer -= dt;
+        if (o.formTimer <= 0) {
+          o.formTarget = 0.985 + Math.random() * 0.03;
+          o.formTimer = 6 + Math.random() * 8;
         }
+        o.form = THREE.MathUtils.damp(o.form, o.formTarget, 0.8, dt);
 
-        o.distance += o.speed * dt;
+        // Occasional mistakes (lock-up, running wide): slower drivers make more of them
+        o.mistakeIn -= dt;
+        if (o.mistake > 0) {
+          o.mistake -= dt;
+        } else if (o.mistakeIn <= 0) {
+          o.mistake = 0.9 + Math.random() * 0.8;
+          o.mistakeSeverity = (0.06 + Math.random() * 0.1) * (1.15 - o.pace * 0.5);
+          o.mistakeIn = (12 + Math.random() * 22) * (0.7 + o.pace * 0.8);
+        }
+        const mistakeScale = o.mistake > 0 ? 1 - o.mistakeSeverity : 1;
 
-        if (o.finishTime === null && o.distance >= TOTAL) o.finishTime = state.elapsed;
+        if (o.reaction > 0) {
+          // Waiting for the launch (each driver reacts to the lights differently)
+          o.reaction -= dt;
+        } else {
+          // ---- look for a car ahead (other AI or the player) ----
+          let blocker = null;
+          let blockGap = Infinity;
+          let alongside = false;
+
+          const scan = (distance, lat, speed) => {
+            const gap = distance - o.distance;
+            const sideways = Math.abs(lat - o.lat);
+
+            if (Math.abs(gap) < 7 && sideways < 3.4) alongside = true;
+            if (gap <= 0 || gap > PASS_LOOKAHEAD || sideways > 3) return;
+
+            if (gap < blockGap) {
+              blockGap = gap;
+              blocker = { lat, speed };
+            }
+          };
+
+          scan(state.distance, track.offset, playerSpeed);
+          opponents.forEach((other, oj) => {
+            if (oj !== oi) scan(other.distance, other.lat, other.speed);
+          });
+
+          // ---- overtaking: pull out and go around a slower car ----
+          const closing = blocker && (o.speed - blocker.speed > 1 || blockGap < 8);
+
+          if (closing) {
+            if (o.passSide === 0) {
+              let side = o.lat >= blocker.lat ? 1 : -1;
+              if (Math.abs(blocker.lat + side * PASS_CLEARANCE) > LAT_LIMIT) side = -side;
+              o.passSide = side;
+            }
+
+            o.passHold = 0.8;
+            o.passTarget =
+              THREE.MathUtils.clamp(blocker.lat + o.passSide * PASS_CLEARANCE, -LAT_LIMIT, LAT_LIMIT) -
+              (o.lane + o.laneOffset);
+          } else if (o.passSide !== 0) {
+            // Do not cut back in while still alongside someone
+            if (alongside) o.passHold = Math.max(o.passHold, 0.3);
+            o.passHold -= dt;
+
+            if (o.passHold <= 0) {
+              o.passSide = 0;
+              o.passTarget = 0;
+            }
+          }
+
+          // ---- speed: corner/braking limit x form x rubber band x mistake x slipstream ----
+          let target = brakingTarget(o.distance, o.maxSpeed, o.gripScale, AI_BRAKE);
+
+          // Mild rubber band: cars far ahead of the player ease off, cars far behind push
+          const gapToPlayer = o.distance - state.distance;
+          const rubber =
+            1 - THREE.MathUtils.clamp(gapToPlayer / RUBBER_RANGE, -1, 1) * RUBBER_BAND;
+
+          // Slipstream: closing up in the wake of the car ahead
+          let tow = 0;
+          if (blocker && Math.abs(blocker.lat - o.lat) < 2.2) {
+            tow = THREE.MathUtils.clamp(1 - blockGap / PASS_LOOKAHEAD, 0, 1);
+          }
+
+          target *= o.form * rubber * mistakeScale * (1 + 0.03 * tow);
+          target = Math.min(target, o.maxSpeed * 1.04);
+
+          // Stuck right behind a car in the same line: match its speed until there is room to pass
+          if (blocker && blockGap < 10 && Math.abs(blocker.lat - o.lat) < 2.4) {
+            target = Math.min(target, Math.max(0, blocker.speed + (blockGap - 6) * 0.8));
+          }
+
+          if (o.speed > target) {
+            o.speed = Math.max(target, o.speed - AI_BRAKE * dt);
+          } else {
+            const acceleration = THREE.MathUtils.clamp(14 - 0.11 * o.speed, 2.5, 12.5) * o.power;
+            o.speed = Math.min(target, o.speed + acceleration * dt);
+          }
+
+          o.distance += o.speed * dt;
+
+          if (o.finishTime === null && o.distance >= TOTAL) o.finishTime = state.elapsed;
+        }
       }
 
       o.impactTimer = Math.max(0, o.impactTimer - dt);
@@ -720,7 +874,17 @@ export default function Race({ carRef, hudRef }) {
 
       o.laneOffset = THREE.MathUtils.damp(o.laneOffset, targetLane - o.lane, 1.5, dt);
 
-      const { x, z, yaw: baseYaw } = laneXZ(o.distance, o.lane + o.laneOffset + o.impactOffset);
+      // Smoothly move out to (or back from) an overtaking line
+      o.passOffset = THREE.MathUtils.damp(o.passOffset, o.passTarget, 2.2, dt);
+
+      const lateral = THREE.MathUtils.clamp(
+        o.lane + o.laneOffset + o.passOffset + o.impactOffset,
+        -LAT_LIMIT,
+        LAT_LIMIT
+      );
+      o.lat = lateral;
+
+      const { x, z, yaw: baseYaw } = laneXZ(o.distance, lateral);
       const yaw = baseYaw + o.impactYaw;
 
       const mc =
@@ -741,8 +905,6 @@ export default function Race({ carRef, hudRef }) {
 
     // ---- player position on track ----
     const position = body.translation();
-    const lv = body.linvel();
-    const playerSpeed = Math.hypot(lv.x, lv.z);
 
     const rq = body.rotation();
     const pc =
@@ -852,6 +1014,7 @@ export default function Race({ carRef, hudRef }) {
         const lapTime = state.elapsed - state.lapStartedAt;
 
         state.lastLap = lapTime;
+        (raceInfo.lapTimes ||= []).push({ time: lapTime, invalid: state.lapInvalid }); // MOBILE-FIX (C)
         raceInfo.lastLapInvalid = state.lapInvalid;
 
         // Lap 1 is a standing start; deleted laps never count as best
@@ -961,11 +1124,12 @@ export default function Race({ carRef, hudRef }) {
     if (hudRef?.current) {
       const best = state.bestLap !== null ? ` · BEST ${formatTime(state.bestLap)}` : "";
       const pen = state.penalty ? ` · +${state.penalty}S` : "";
+      const total = opponents.length + 1;
 
       hudRef.current.textContent =
         state.finishTime !== null
           ? `FINISHED · P${state.finishPosition} · ${formatTime(state.finalTime)}${pen}`
-          : `P${playerRank}/6 · LAP ${currentLap}/${LAPS} · ${formatTime(state.elapsed)}${best}${pen}`;
+          : `P${playerRank}/${total} · LAP ${currentLap}/${LAPS} · ${formatTime(state.elapsed)}${best}${pen}`;
     }
   });
 

@@ -1,0 +1,119 @@
+html, body {
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.app-shell { height: 100dvh; }
+.rotate-notice, .mobile-controls, .tap-group { display: none; }
+
+/* ---------- Portrait phones: ask to rotate ---------- */
+@media (pointer: coarse) and (orientation: portrait) {
+  .rotate-notice {
+    display: flex; position: fixed; inset: 0; z-index: 99999;
+    flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: #0b0c10; color: #fff; font: 700 14px sans-serif; letter-spacing: .2em;
+  }
+  .rotate-notice span { font-size: 48px; }
+}
+
+/* ---------- Landscape phones ---------- */
+@media (pointer: coarse) and (orientation: landscape) {
+
+  /* thumb controls */
+  .mobile-controls {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    position: fixed; inset: auto 0 0 0; z-index: 60; pointer-events: none;
+    padding: 0 max(18px, env(safe-area-inset-right)) 14px max(18px, env(safe-area-inset-left));
+  }
+  .control-left, .control-right { display: flex; gap: 10px; align-items: flex-end; }
+  .touch-control {
+    pointer-events: auto; touch-action: none; backdrop-filter: none;
+    width: 66px; height: 66px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35); background: rgba(20,22,28,.45);
+    color: #fff; font: 700 22px sans-serif;
+  }
+  .touch-control:active { background: rgba(255,255,255,.3); }
+  .accelerate-btn { width: 90px; height: 90px; font-size: 16px; background: rgba(0,220,121,.35); }
+  .reverse-btn { width: 64px; height: 64px; font-size: 12px; background: rgba(255,69,69,.35); }
+  .mini-btn { width: 44px; height: 44px; font-size: 11px; }
+
+  .tap-group {
+    display: flex; gap: 8px; position: fixed; top: 128px;
+    right: max(8px, env(safe-area-inset-right));
+  }
+  .tap-group .touch-control { width: 40px; height: 40px; font-size: 9px; }
+
+  /* ---- Broadcast HUD ---- */
+  .broadcast, .broadcast * { pointer-events: none; }
+
+  .broadcast-brand, .broadcast-top, .broadcast-bottom, .panel-heading,
+  .timing-race-info, .timing-divider, .timing-footer, .telemetry-heading,
+  .speed-bar, .telemetry-footer, .leaderboard-driver small,
+  .gear-display small, .gear-display div:nth-child(2) { display: none; }
+
+  .timing-panel, .telemetry-panel { backdrop-filter: none; }
+
+  .timing-panel { top: 6px; left: max(8px, env(safe-area-inset-left)); width: 130px; }
+  .leaderboard-row { height: 21px; gap: 5px; padding: 0 6px 0 4px; }
+  .leaderboard-position { width: 16px; height: 16px; line-height: 16px; font-size: 10px; }
+  .leaderboard-team-color { height: 14px; }
+  .leaderboard-driver strong { font-size: 11px; }
+  .leaderboard-gap { font-size: 9px; }
+
+  .telemetry-panel {
+    top: auto; right: auto; left: 50%; bottom: 8px; transform: translateX(-50%);
+    width: auto; padding: 4px 14px; display: flex; align-items: center; gap: 14px;
+  }
+  .speed-display { margin: 0; }
+  .speed-display strong { font-size: 32px; }
+  .gear-display { margin: 0; padding: 0; border: 0; }
+  .gear-display strong { font-size: 22px; }
+  .ers-section { margin: 0; width: 70px; }
+
+  /* ---- Cockpit dash (injects its own <style>, so raise specificity) ---- */
+  .cd-wrap .cd-wheel { display: none !important; }
+  .cd-wrap .cd-timing { right: auto; left: 50%; transform: translateX(-50%); top: 6px; width: 190px; }
+  .cd-wrap .cd-bottom { padding: 4px 8px; }
+  .cd-wrap .cd-pos, .cd-wrap .cd-time { font-size: 16px; }
+  .cd-wrap .cd-best { display: none; }
+  .cd-wrap .cd-start { top: 60px; padding: 8px 12px; gap: 8px; }
+  .cd-wrap .cd-bulb { width: 22px; height: 22px; }
+
+  /* ---- Minimap ---- */
+  html .mm-wrap {
+    top: 6px; right: max(8px, env(safe-area-inset-right)); bottom: auto;
+    z-index: 30; border-width: 1px;
+  }
+  html .mm-title { display: none; }
+
+  /* ---- Start countdown ---- */
+  html .sc-wrap { top: 26%; }
+  html .sc-number { font-size: 76px; }
+  html .sc-label { font-size: 11px; letter-spacing: 5px; }
+
+  /* ---- Start menu ---- */
+  .menu-panel { max-height: 94dvh; overflow: auto !important; }
+
+  /* ---- Race results ---- */
+  .rr, .rr-flagwrap { backdrop-filter: none; }
+  html .rr { padding: 6px; }
+  .rr-card { touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  html .rr-body { padding: 10px 16px 12px; }
+  html .rr-pos { font-size: 44px; }
+  html .rr-pos small { font-size: 16px; }
+  html .rr-time { font-size: 20px; }
+  .rr-top { margin: 2px 0 8px; }
+  .rr-pod { display: none; }
+  html .rr-cols { grid-template-columns: 1.6fr 1fr; gap: 14px; }
+  .rr-table th, .rr-table td { padding: 4px 6px; }
+  .rr-table th:nth-child(3), .rr-table td:nth-child(3) { display: none; }
+  html .rr-stats { grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0; }
+  .rr-stat { padding: 6px 8px; }
+  .rr-stat b { font-size: 15px; }
+  .rr-note { margin-bottom: 8px; }
+  .rr-btn { position: sticky; bottom: 0; padding: 10px; font-size: 13px; }
+  html .rr-flagband { height: 32px; }
+  html .rr-flagtext { font-size: 40px; margin: 12px 0; }
+}
