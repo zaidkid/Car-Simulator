@@ -680,7 +680,8 @@ export default function Race({ carRef, hudRef }) {
 
     const racing = running && grid.go && state.finishTime === null;
 
-    if (racing) state.elapsed += dt;
+    if (racing) return;
+    state.elapsed += dt;
 
     // ---- AI opponents ----
     opponents.forEach((o, oi) => {
