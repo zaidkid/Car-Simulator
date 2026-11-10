@@ -503,7 +503,9 @@ function resetDriver(o, index, pace) {
 // AI cars that have not crossed the line receive a projected finish time.
 function buildFinalClassification({ state, opponents }) {
   const playerDriver = DRIVERS[0] || {};
-  const playerTime = state.finalTime ?? state.finishTime ?? state.elapsed;
+  // Use actual chequered-flag crossing time for classification.
+  // Time penalties remain visible separately and do not change the position.
+  const playerTime = state.finishTime ?? state.elapsed;
 
   const entries = [
     {
@@ -1054,9 +1056,10 @@ export default function Race({ carRef, hudRef }) {
 
         if (completed >= LAPS) {
           state.finishTime = state.elapsed;
-          state.finalTime = state.elapsed + state.penalty;
+          // Keep the crossing time unchanged; display the penalty separately.
+          state.finalTime = state.finishTime;
 
-          // Classification: penalty added to the time, unfinished cars projected
+          // Classification: actual crossing times; unfinished cars projected (penalty shown separately)
           state.finishPosition =
             1 +
             opponents.filter(
