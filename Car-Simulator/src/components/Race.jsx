@@ -38,11 +38,11 @@ const DRS_GAP = 1.0; // seconds to the car ahead
 // ---- AI field: every AI gets a different pace each race ----
 // pace is 0 (slowest) .. 1 (fastest). Paces are shuffled across the five AI
 // cars at the start of every race, so the grid order says nothing about who is quick.
-const AI_SPEED_MIN = 82; // m/s top speed of the slowest AI  (~295 km/h)
-const AI_SPEED_MAX = 86.5; // m/s top speed of the fastest AI (~311 km/h)
-const AI_GRIP_MIN = 0.915; // cornering grip scale of the slowest AI
-const AI_GRIP_MAX = 0.99; // cornering grip scale of the fastest AI
-const PACE_JITTER = 0.24; // random +/- spread added on top of the shuffled pace
+const AI_SPEED_MIN = 46; // m/s (~166 km/h): slower AI
+const AI_SPEED_MAX = 60; // m/s (~216 km/h): fastest AI
+const AI_GRIP_MIN = 0.82; // slower drivers lose more speed in corners
+const AI_GRIP_MAX = 0.94; // strongest AI remains below player performance
+const PACE_JITTER = 0.28; // varied but controlled pace differences
 
 // ---- AI racecraft ----
 const PASS_LOOKAHEAD = 24; // m: how far ahead an AI looks for a slower car
@@ -470,11 +470,16 @@ function resetDriver(o, index, pace) {
     pace,
     maxSpeed: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
     gripScale: AI_GRIP_MIN + pace * (AI_GRIP_MAX - AI_GRIP_MIN),
-    power: 0.93 + pace * 0.09,
-    reaction: 0.05 + Math.random() * 0.3, // seconds before the car reacts to the lights going out
-    form: 1,
-    formTarget: 1,
-    formTimer: 3 + Math.random() * 5,
+    // Cache the expensive look-ahead braking calculation between frames.
+    brakeTarget: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
+    smoothedTarget: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
+    brakeTargetTimer: 0,
+    // Noticeable differences in acceleration and launch reaction.
+    power: 0.62 + pace * 0.16,
+    reaction: 0.08 + Math.random() * (0.62 - pace * 0.30),
+    form: 0.97 + Math.random() * 0.06,
+    formTarget: 0.97 + Math.random() * 0.06,
+    formTimer: 2.5 + Math.random() * 4.5,
     mistake: 0,
     mistakeSeverity: 0,
     mistakeIn: (12 + Math.random() * 22) * (0.7 + pace * 0.8),
@@ -756,8 +761,9 @@ export default function Race({ carRef, hudRef }) {
         // Random form: pace drifts a little up and down during the race
         o.formTimer -= dt;
         if (o.formTimer <= 0) {
-          o.formTarget = 0.985 + Math.random() * 0.03;
-          o.formTimer = 6 + Math.random() * 8;
+          // Driver form changes over a stint; each AI has its own pace rhythm.
+          o.formTarget = 0.955 + Math.random() * 0.09;
+          o.formTimer = 4 + Math.random() * 7;
         }
         o.form = THREE.MathUtils.damp(o.form, o.formTarget, 0.8, dt);
 
@@ -766,9 +772,10 @@ export default function Race({ carRef, hudRef }) {
         if (o.mistake > 0) {
           o.mistake -= dt;
         } else if (o.mistakeIn <= 0) {
-          o.mistake = 0.9 + Math.random() * 0.8;
-          o.mistakeSeverity = (0.06 + Math.random() * 0.1) * (1.15 - o.pace * 0.5);
-          o.mistakeIn = (12 + Math.random() * 22) * (0.7 + o.pace * 0.8);
+          // Lower-rated drivers make mistakes more often and lose more time.
+          o.mistake = 0.7 + Math.random() * 1.4;
+          o.mistakeSeverity = (0.07 + Math.random() * 0.16) * (1.25 - o.pace * 0.55);
+          o.mistakeIn = (8 + Math.random() * 18) * (0.65 + o.pace * 1.0);
         }
         const mistakeScale = o.mistake > 0 ? 1 - o.mistakeSeverity : 1;
 
@@ -825,7 +832,26 @@ export default function Race({ carRef, hudRef }) {
           }
 
           // ---- speed: corner/braking limit x form x rubber band x mistake x slipstream ----
-          let target = brakingTarget(o.distance, o.maxSpeed, o.gripScale, AI_BRAKE);
+          // Cache the look-ahead scan to avoid doing expensive work every frame.
+          // Refresh at 10 Hz, then smoothly follow the new target speed.
+          o.brakeTargetTimer -= dt;
+          if (o.brakeTargetTimer <= 0) {
+            o.brakeTarget = brakingTarget(
+              o.distance,
+              o.maxSpeed,
+              o.gripScale,
+              AI_BRAKE,
+            );
+            o.brakeTargetTimer = 0.1;
+          }
+          let target = o.brakeTarget;
+          o.smoothedTarget = THREE.MathUtils.damp(
+            o.smoothedTarget ?? target,
+            target,
+            4.5,
+            dt,
+          );
+          target = o.smoothedTarget;
 
           // Mild rubber band: cars far ahead of the player ease off, cars far behind push
           const gapToPlayer = o.distance - state.distance;
@@ -849,7 +875,7 @@ export default function Race({ carRef, hudRef }) {
           if (o.speed > target) {
             o.speed = Math.max(target, o.speed - AI_BRAKE * dt);
           } else {
-            const acceleration = THREE.MathUtils.clamp(14 - 0.11 * o.speed, 2.5, 12.5) * o.power;
+            const acceleration = THREE.MathUtils.clamp(5.5 - 0.045 * o.speed, 1.2, 4.8) * o.power;
             o.speed = Math.min(target, o.speed + acceleration * dt);
           }
 

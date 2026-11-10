@@ -162,7 +162,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   const keys = useRef({});
   const [sparks, setSparks] = useState([]);
 
-  const engine = useRef(null); // synthesized engine: { ctx, master, filter, oscs }
+  const engine = useRef(null);
   const horn = useRef(null);
   const crashAudio = useRef(null);
   const skid = useRef(null);
@@ -193,7 +193,6 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     longG: 0,
     latG: 0,
     skidGain: 0,
-    audioPitch: 0,
   });
 
   const forward = useRef(new THREE.Vector3());
@@ -245,7 +244,6 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       longG: 0,
       latG: 0,
       skidGain: 0,
-      audioPitch: 0,
     });
 
     collisionState.current.timer = 0;
@@ -266,7 +264,10 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     telemetry.ers = false;
     telemetry.drs = false;
 
-    if (engine.current) engine.current.master.gain.value = 0;
+    if (engine.current) {
+      engine.current.pause();
+      engine.current.currentTime = 0;
+    }
 
     if (skid.current) {
       skid.current.gain.gain.value = 0;
@@ -326,77 +327,28 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   }, [resetCar]);
 
   // ==========================================
-  // AUDIO (horn + crash samples)
+  // AUDIO
   // ==========================================
 
   useEffect(() => {
+    engine.current = new Audio("/sounds/engine.mp3");
+    engine.current.loop = true;
+    engine.current.volume = 0.4;
+
+    engine.current.preservesPitch = false;
+    engine.current.mozPreservesPitch = false;
+    engine.current.webkitPreservesPitch = false;
+
     horn.current = new Audio("/sounds/honk.mp3");
     crashAudio.current = new Audio("/sounds/crash.mp3");
 
     return () => {
-      [horn.current, crashAudio.current].forEach((audio) => {
+      [engine.current, horn.current, crashAudio.current].forEach((audio) => {
         if (!audio) return;
 
         audio.pause();
         audio.src = "";
       });
-    };
-  }, []);
-
-  // ==========================================
-  // SYNTHESIZED ENGINE (starts on first tap / key press)
-  // ==========================================
-
-  useEffect(() => {
-    const start = () => {
-      if (engine.current) return;
-
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-
-      const ctx = new AudioCtx();
-      ctx.resume?.();
-
-      const master = ctx.createGain();
-      master.gain.value = 0;
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.value = 800;
-      filter.Q.value = 1.5;
-
-      // [wave, harmonic multiple, level]
-      const oscs = [
-        ["sawtooth", 1, 0.5],
-        ["sawtooth", 1.005, 0.5],
-        ["square", 2, 0.15],
-        ["sawtooth", 0.5, 0.3],
-      ].map(([type, mult, level]) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = type;
-        g.gain.value = level;
-        o.connect(g);
-        g.connect(filter);
-        o.start();
-        return { o, mult };
-      });
-
-      filter.connect(master);
-      master.connect(ctx.destination);
-
-      engine.current = { ctx, master, filter, oscs };
-    };
-
-    window.addEventListener("keydown", start, { once: true });
-    window.addEventListener("pointerdown", start, { once: true });
-
-    return () => {
-      window.removeEventListener("keydown", start);
-      window.removeEventListener("pointerdown", start);
-
-      engine.current?.ctx.close().catch(() => {});
-      engine.current = null;
     };
   }, []);
 
@@ -972,44 +924,50 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     }
 
     // ==========================================
-    // ENGINE AUDIO (silent at standstill, pitch follows speed)
+    // ENGINE AUDIO — PLAYER CAR ONLY
+    // Keep the engine running continuously while the player
+    // holds the accelerator. Do not stop it based on speed:
+    // the car may be stationary briefly while launching or blocked.
     // ==========================================
 
-    const eng = engine.current;
+    const audio = engine.current;
 
-    if (eng) {
-      if (eng.ctx.state === "suspended") eng.ctx.resume?.();
+    if (audio) {
+      const shouldPlayEngine = canDrive && throttleIn > 0;
 
-      // 0..1 from standstill to top speed; small rev only when launching
-      const speedNorm = THREE.MathUtils.clamp(speed / CAR.gearTops[7], 0, 1);
-      const launchRev = v < 6 ? c.throttle * 0.12 * (1 - v / 6) : 0;
+      if (shouldPlayEngine) {
+        if (audio.paused) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        }
 
-      // Rises with speed, falls when you lift off or brake; never jumps
-      c.audioPitch = THREE.MathUtils.damp(
-        c.audioPitch || 0,
-        speedNorm + launchRev,
-        throttleIn ? 3 : 1.5,
-        dt,
-      );
+        // Actual speed changes the engine pitch, but never gates the sound.
+        const actualSpeed = Math.hypot(current.x, current.z);
+        const speedNorm = THREE.MathUtils.clamp(
+          actualSpeed / CAR.gearTops[7],
+          0,
+          1,
+        );
 
-      // Silent when stopped with no throttle, and silent outside the race
-      const moving = THREE.MathUtils.clamp(speed / 2, 0, 1);
-      const level = canDrive
-        ? Math.max(moving * (0.35 + 0.65 * c.throttle), c.throttle * 0.45)
-        : 0;
+        c.audioPitch = THREE.MathUtils.damp(
+          c.audioPitch || 0,
+          speedNorm,
+          5,
+          dt,
+        );
 
-      const t = eng.ctx.currentTime;
-      const f = 70 + c.audioPitch * 330;
+        audio.playbackRate = 0.75 + c.audioPitch * 1.15;
+        audio.volume = 0.38;
+      } else {
+        // Stop only when the accelerator is released or the race is inactive.
+        if (!audio.paused) {
+          audio.pause();
+          audio.currentTime = 0;
+        }
 
-      eng.oscs.forEach(({ o, mult }) =>
-        o.frequency.setTargetAtTime(f * mult, t, 0.05),
-      );
-      eng.filter.frequency.setTargetAtTime(
-        500 + c.audioPitch * 2500 + c.throttle * 600,
-        t,
-        0.08,
-      );
-      eng.master.gain.setTargetAtTime(level * 0.12, t, 0.08);
+        audio.volume = 0;
+        c.audioPitch = 0;
+      }
     }
 
     // ==========================================
