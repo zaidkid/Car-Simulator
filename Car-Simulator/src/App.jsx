@@ -1,10 +1,9 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
-import { useGLTF } from "@react-three/drei";
+import { useGLTF, PerformanceMonitor } from "@react-three/drei";
 
 import "./App.css";
-
 
 import Car from "./components/Car";
 import Ground from "./components/Ground";
@@ -20,7 +19,7 @@ import CockpitDash from "./components/Cockpitdash";
 import RaceResults from "./components/Raceresults";
 
 import { game, useGame } from "./components/gameStore";
-import "./mobile.css";
+import "./mobile.css"; // must stay last so it overrides component CSS
 
 // Start fetching the main car asset as soon as this module is loaded.
 useGLTF.preload("/models/Red_bull_car.glb");
@@ -208,6 +207,9 @@ export default function App() {
   const mobileRef = useRef(EMPTY_CONTROLS());
   const [sceneReady, setSceneReady] = useState(false);
 
+  // Render resolution: starts sharp, drops only if the frame rate falls
+  const [dpr, setDpr] = useState(PHONE ? 1.75 : 1.25);
+
   // CENTRAL KEYBOARD INPUT
   useEffect(() => {
     const keyMap = {
@@ -256,7 +258,7 @@ export default function App() {
     <main className="app-shell">
       <Canvas
         shadows
-        dpr={[1, PHONE ? 1 : 1.25]}
+        dpr={dpr}
         gl={{
           antialias: false,
           powerPreference: "high-performance",
@@ -270,6 +272,11 @@ export default function App() {
           far: 2500,
         }}
       >
+        <PerformanceMonitor
+          onDecline={() => setDpr((d) => Math.max(1, d - 0.25))}
+          onIncline={() => setDpr((d) => Math.min(PHONE ? 2 : 1.5, d + 0.25))}
+        />
+
         <color attach="background" args={["#cfdcea"]} />
         <GameLoop />
 

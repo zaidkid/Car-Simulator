@@ -115,10 +115,7 @@ function SparkBurst({ position, onDone }) {
 
     if (ref.current) {
       ref.current.scale.setScalar(1 + age.current * 3);
-      ref.current.material.opacity = Math.max(
-        0,
-        1 - age.current / 0.35
-      );
+      ref.current.material.opacity = Math.max(0, 1 - age.current / 0.35);
     }
 
     if (age.current > 0.35) onDone();
@@ -147,14 +144,14 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
   const model = useMemo(
     () => prepareCarModel(gltf.scene, recolorLivery),
-    [gltf.scene]
+    [gltf.scene],
   );
 
   const { actions } = useAnimations(gltf.animations, modelRef);
 
   useEffect(() => {
     const wheelAnimation = Object.entries(actions).find(([name]) =>
-      /wheel.*roll|roll.*wheel/i.test(name)
+      /wheel.*roll|roll.*wheel/i.test(name),
     )?.[1];
 
     wheelAnimation?.reset().play();
@@ -165,7 +162,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   const keys = useRef({});
   const [sparks, setSparks] = useState([]);
 
-  const engine = useRef(null);
+  const engine = useRef(null); // synthesized engine: { ctx, master, filter, oscs }
   const horn = useRef(null);
   const crashAudio = useRef(null);
   const skid = useRef(null);
@@ -196,6 +193,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     longG: 0,
     latG: 0,
     skidGain: 0,
+    audioPitch: 0,
   });
 
   const forward = useRef(new THREE.Vector3());
@@ -218,7 +216,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         y: START.pos[1],
         z: START.pos[2],
       },
-      true
+      true,
     );
 
     body.setRotation(
@@ -228,18 +226,12 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         z: 0,
         w: Math.cos(START.yaw / 2),
       },
-      true
+      true,
     );
 
-    body.setLinvel(
-      { x: 0, y: 0, z: 0 },
-      true
-    );
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
 
-    body.setAngvel(
-      { x: 0, y: 0, z: 0 },
-      true
-    );
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
     Object.assign(ctl.current, {
       battery: 100,
@@ -253,6 +245,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       longG: 0,
       latG: 0,
       skidGain: 0,
+      audioPitch: 0,
     });
 
     collisionState.current.timer = 0;
@@ -273,10 +266,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     telemetry.ers = false;
     telemetry.drs = false;
 
-    if (engine.current) {
-      engine.current.pause();
-      engine.current.currentTime = 0;
-    }
+    if (engine.current) engine.current.master.gain.value = 0;
 
     if (skid.current) {
       skid.current.gain.gain.value = 0;
@@ -336,30 +326,77 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   }, [resetCar]);
 
   // ==========================================
-  // AUDIO
+  // AUDIO (horn + crash samples)
   // ==========================================
 
   useEffect(() => {
-    engine.current = new Audio("/sounds/engine.mp3");
-    engine.current.loop = true;
-    engine.current.volume = 0.4;
-
-    engine.current.preservesPitch = false;
-    engine.current.mozPreservesPitch = false;
-    engine.current.webkitPreservesPitch = false;
-
     horn.current = new Audio("/sounds/honk.mp3");
     crashAudio.current = new Audio("/sounds/crash.mp3");
 
     return () => {
-      [engine.current, horn.current, crashAudio.current].forEach(
-        (audio) => {
-          if (!audio) return;
+      [horn.current, crashAudio.current].forEach((audio) => {
+        if (!audio) return;
 
-          audio.pause();
-          audio.src = "";
-        }
-      );
+        audio.pause();
+        audio.src = "";
+      });
+    };
+  }, []);
+
+  // ==========================================
+  // SYNTHESIZED ENGINE (starts on first tap / key press)
+  // ==========================================
+
+  useEffect(() => {
+    const start = () => {
+      if (engine.current) return;
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      const ctx = new AudioCtx();
+      ctx.resume?.();
+
+      const master = ctx.createGain();
+      master.gain.value = 0;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 800;
+      filter.Q.value = 1.5;
+
+      // [wave, harmonic multiple, level]
+      const oscs = [
+        ["sawtooth", 1, 0.5],
+        ["sawtooth", 1.005, 0.5],
+        ["square", 2, 0.15],
+        ["sawtooth", 0.5, 0.3],
+      ].map(([type, mult, level]) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = type;
+        g.gain.value = level;
+        o.connect(g);
+        g.connect(filter);
+        o.start();
+        return { o, mult };
+      });
+
+      filter.connect(master);
+      master.connect(ctx.destination);
+
+      engine.current = { ctx, master, filter, oscs };
+    };
+
+    window.addEventListener("keydown", start, { once: true });
+    window.addEventListener("pointerdown", start, { once: true });
+
+    return () => {
+      window.removeEventListener("keydown", start);
+      window.removeEventListener("pointerdown", start);
+
+      engine.current?.ctx.close().catch(() => {});
+      engine.current = null;
     };
   }, []);
 
@@ -371,18 +408,13 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const start = () => {
       if (skid.current) return;
 
-      const AudioCtx =
-        window.AudioContext || window.webkitAudioContext;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
 
       if (!AudioCtx) return;
 
       const ctx = new AudioCtx();
 
-      const buffer = ctx.createBuffer(
-        1,
-        ctx.sampleRate * 2,
-        ctx.sampleRate
-      );
+      const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
 
       const data = buffer.getChannelData(0);
 
@@ -455,16 +487,13 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   // ==========================================
 
   const onCollision = (event) => {
-    const otherName =
-      event.other.rigidBodyObject?.name || "";
+    const otherName = event.other.rigidBodyObject?.name || "";
 
     const isAI = otherName.startsWith("ai-car-");
 
-    const isEnvironment = [
-      "building",
-      "traffic",
-      "barrier",
-    ].includes(otherName);
+    const isEnvironment = ["building", "traffic", "barrier"].includes(
+      otherName,
+    );
 
     if (!isAI && !isEnvironment) return;
 
@@ -480,23 +509,19 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const playerPosition = playerBody?.translation();
     const otherPosition = otherBody?.translation();
 
-    let spinDirection =
-      Math.random() > 0.5 ? 1 : -1;
+    let spinDirection = Math.random() > 0.5 ? 1 : -1;
 
     if (playerPosition && otherPosition && playerBody) {
       const q = playerBody.rotation();
 
       const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(
-        new THREE.Quaternion(q.x, q.y, q.z, q.w)
+        new THREE.Quaternion(q.x, q.y, q.z, q.w),
       );
 
       const dx = otherPosition.x - playerPosition.x;
       const dz = otherPosition.z - playerPosition.z;
 
-      spinDirection =
-        dx * rightVector.x + dz * rightVector.z >= 0
-          ? -1
-          : 1;
+      spinDirection = dx * rightVector.x + dz * rightVector.z >= 0 ? -1 : 1;
     }
 
     const impactVelocity = playerBody?.linvel();
@@ -508,8 +533,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     collisionState.current.timer = 1.15;
 
     collisionState.current.spin =
-      spinDirection *
-      THREE.MathUtils.clamp(impactSpeed / 75, 0.12, 0.48);
+      spinDirection * THREE.MathUtils.clamp(impactSpeed / 75, 0.12, 0.48);
 
     game.crash();
     addSparks(now);
@@ -530,10 +554,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     const phase = game.get().phase;
 
-    if (
-      phase === "playing" &&
-      previousPhase.current !== "playing"
-    ) {
+    if (phase === "playing" && previousPhase.current !== "playing") {
       resetCar();
     }
 
@@ -548,9 +569,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const carPosition = body.translation();
 
     if (carPosition.y < -1.5) {
-      console.warn(
-        "APEX RACING: Car fell below the circuit. Recovering..."
-      );
+      console.warn("APEX RACING: Car fell below the circuit. Recovering...");
 
       resetCar();
 
@@ -570,16 +589,9 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     const collision = collisionState.current;
 
-    collision.timer = Math.max(
-      0,
-      collision.timer - dt
-    );
+    collision.timer = Math.max(0, collision.timer - dt);
 
-    const collisionBlend = THREE.MathUtils.smoothstep(
-      collision.timer,
-      0,
-      1.15
-    );
+    const collisionBlend = THREE.MathUtils.smoothstep(collision.timer, 0, 1.15);
 
     // ==========================================
     // INPUT
@@ -588,27 +600,15 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const k = keys.current;
     const m = mobileRef?.current || {};
 
-    const throttleIn =
-      canDrive &&
-      (k.w || k.arrowup || m.forward)
-        ? 1
-        : 0;
+    const throttleIn = canDrive && (k.w || k.arrowup || m.forward) ? 1 : 0;
 
-    const brakeIn =
-      canDrive &&
-      (k.s || k.arrowdown || m.backward)
-        ? 1
-        : 0;
+    const brakeIn = canDrive && (k.s || k.arrowdown || m.backward) ? 1 : 0;
 
-    const left =
-      k.a || k.arrowleft || m.left;
+    const left = k.a || k.arrowleft || m.left;
 
-    const right =
-      k.d || k.arrowright || m.right;
+    const right = k.d || k.arrowright || m.right;
 
-    const steerInput = canDrive
-      ? (left ? 1 : 0) - (right ? 1 : 0)
-      : 0;
+    const steerInput = canDrive ? (left ? 1 : 0) - (right ? 1 : 0) : 0;
 
     // ==========================================
     // CURRENT MOTION
@@ -618,22 +618,13 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     rotation.current.set(q.x, q.y, q.z, q.w);
 
-    forward.current
-      .set(0, 0, 1)
-      .applyQuaternion(rotation.current)
-      .normalize();
+    forward.current.set(0, 0, 1).applyQuaternion(rotation.current).normalize();
 
     const current = body.linvel();
 
-    velocity.current.set(
-      current.x,
-      0,
-      current.z
-    );
+    velocity.current.set(current.x, 0, current.z);
 
-    const forwardSpeed = velocity.current.dot(
-      forward.current
-    );
+    const forwardSpeed = velocity.current.dot(forward.current);
 
     lateral.current
       .copy(velocity.current)
@@ -645,8 +636,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     const surfaceName = track.surface || "track";
 
-    const surf =
-      SURFACE[surfaceName] || SURFACE.track;
+    const surf = SURFACE[surfaceName] || SURFACE.track;
 
     // ==========================================
     // PEDALS
@@ -656,32 +646,25 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       c.throttle,
       throttleIn,
       throttleIn > c.throttle ? 6 : 14,
-      dt
+      dt,
     );
 
-    const brakingForward =
-      brakeIn && forwardSpeed > 0.8;
+    const brakingForward = brakeIn && forwardSpeed > 0.8;
 
     c.brake = approach(
       c.brake,
       brakingForward ? 1 : 0,
       brakingForward ? 7 : 16,
-      dt
+      dt,
     );
 
-    if (
-      brakeIn &&
-      Math.abs(forwardSpeed) < 0.8
-    ) {
+    if (brakeIn && Math.abs(forwardSpeed) < 0.8) {
       c.reverseTimer += dt;
     } else if (!brakeIn) {
       c.reverseTimer = 0;
     }
 
-    const reversing =
-      brakeIn &&
-      forwardSpeed <= 0.8 &&
-      c.reverseTimer > 0.3;
+    const reversing = brakeIn && forwardSpeed <= 0.8 && c.reverseTimer > 0.3;
 
     // ==========================================
     // GEARBOX
@@ -689,24 +672,15 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     const tops = CAR.gearTops;
 
-    c.shiftTimer = Math.max(
-      0,
-      c.shiftTimer - dt
-    );
+    c.shiftTimer = Math.max(0, c.shiftTimer - dt);
 
     if (forwardSpeed >= -0.5) {
-      while (
-        c.gear < 8 &&
-        v > tops[c.gear - 1] * 0.965
-      ) {
+      while (c.gear < 8 && v > tops[c.gear - 1] * 0.965) {
         c.gear += 1;
         c.shiftTimer = 0.08;
       }
 
-      while (
-        c.gear > 1 &&
-        v < tops[c.gear - 2] * 0.86
-      ) {
+      while (c.gear > 1 && v < tops[c.gear - 2] * 0.86) {
         c.gear -= 1;
       }
     }
@@ -716,11 +690,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     // ==========================================
 
     const ersOn =
-      canDrive &&
-      (k.shift || m.ers) &&
-      throttleIn &&
-      c.battery > 0.5 &&
-      v > 5;
+      canDrive && (k.shift || m.ers) && throttleIn && c.battery > 0.5 && v > 5;
 
     const drsOn =
       canDrive &&
@@ -731,17 +701,11 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       v > 40;
 
     if (ersOn) {
-      c.battery = Math.max(
-        0,
-        c.battery - CAR.ersDrain * dt
-      );
+      c.battery = Math.max(0, c.battery - CAR.ersDrain * dt);
     } else {
       c.battery = Math.min(
         100,
-        c.battery +
-          (CAR.ersRecharge +
-            c.brake * CAR.ersBrakeRecharge) *
-            dt
+        c.battery + (CAR.ersRecharge + c.brake * CAR.ersBrakeRecharge) * dt,
       );
     }
 
@@ -755,34 +719,21 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       acc = -CAR.reverseAccel;
     } else if (forwardSpeed < -0.8) {
       acc = throttleIn ? CAR.brakeLow : 4;
-    } else if (
-      brakeIn &&
-      forwardSpeed < 0.8
-    ) {
+    } else if (brakeIn && forwardSpeed < 0.8) {
       acc = -forwardSpeed * 8;
     } else {
-      const power =
-        CAR.power + (ersOn ? CAR.ersPower : 0);
+      const power = CAR.power + (ersOn ? CAR.ersPower : 0);
 
       const tractionLimit =
-        (CAR.traction +
-          CAR.downforceTraction * v * v) *
-        surf.grip;
+        (CAR.traction + CAR.downforceTraction * v * v) * surf.grip;
 
       const thrust =
-        Math.min(
-          tractionLimit,
-          power / Math.max(v, 6)
-        ) *
+        Math.min(tractionLimit, power / Math.max(v, 6)) *
         c.throttle *
         (c.shiftTimer > 0 ? 0.35 : 1) *
         surf.accel;
 
-      const drag =
-        CAR.drag *
-        (drsOn ? 1 - CAR.drsDragCut : 1) *
-        v *
-        v;
+      const drag = CAR.drag * (drsOn ? 1 - CAR.drsDragCut : 1) * v * v;
 
       const brakeDecel =
         (CAR.brakeLow +
@@ -791,8 +742,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         surf.grip *
         c.brake;
 
-      const surfaceDrag =
-        surf.extraDrag * Math.min(1, v / 20);
+      const surfaceDrag = surf.extraDrag * Math.min(1, v / 20);
 
       acc =
         thrust -
@@ -803,14 +753,9 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         (c.throttle < 0.05 ? CAR.engineBrake : 0);
     }
 
-    let nextForwardSpeed =
-      forwardSpeed + acc * dt;
+    let nextForwardSpeed = forwardSpeed + acc * dt;
 
-    if (
-      forwardSpeed >= 0 &&
-      nextForwardSpeed < 0 &&
-      !reversing
-    ) {
+    if (forwardSpeed >= 0 && nextForwardSpeed < 0 && !reversing) {
       nextForwardSpeed = 0;
     }
 
@@ -818,41 +763,28 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     // SPEED LIMITER
     // ==========================================
 
-    const speedLimit =
-      CAR.gearTops[7] +
-      (drsOn ? 3.5 : 0) +
-      (ersOn ? 2 : 0);
+    const speedLimit = CAR.gearTops[7] + (drsOn ? 3.5 : 0) + (ersOn ? 2 : 0);
 
-    const adjustedSpeedLimit =
-      speedLimit * surf.speed;
+    const adjustedSpeedLimit = speedLimit * surf.speed;
 
     if (nextForwardSpeed > adjustedSpeedLimit) {
       nextForwardSpeed = Math.max(
         adjustedSpeedLimit,
-        forwardSpeed - surf.overDecel * dt
+        forwardSpeed - surf.overDecel * dt,
       );
     }
 
-    nextForwardSpeed = Math.max(
-      nextForwardSpeed,
-      -CAR.reverseSpeed
-    );
+    nextForwardSpeed = Math.max(nextForwardSpeed, -CAR.reverseSpeed);
 
-    nextForwardSpeed *= Math.exp(
-      -1.2 * collisionBlend * dt
-    );
+    nextForwardSpeed *= Math.exp(-1.2 * collisionBlend * dt);
 
     // ==========================================
     // LATERAL GRIP
     // ==========================================
 
-    const gripRate =
-      (CAR.roadGrip + v * CAR.gripPerSpeed) *
-      surf.grip;
+    const gripRate = (CAR.roadGrip + v * CAR.gripPerSpeed) * surf.grip;
 
-    lateral.current.multiplyScalar(
-      Math.exp(-gripRate * dt)
-    );
+    lateral.current.multiplyScalar(Math.exp(-gripRate * dt));
 
     velocity.current
       .copy(forward.current)
@@ -863,41 +795,24 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     // STEERING
     // ==========================================
 
-    const steerRate =
-      (steerInput === 0 ? 8 : 5.5) /
-      (1 + v / 30);
+    const steerRate = (steerInput === 0 ? 8 : 5.5) / (1 + v / 30);
 
-    c.steer = approach(
-      c.steer,
-      steerInput,
-      steerRate,
-      dt
-    );
+    c.steer = approach(c.steer, steerInput, steerRate, dt);
 
-    const aLatMax =
-      (CAR.lateralBase +
-        CAR.downforceLat * v * v) *
-      surf.grip;
+    const aLatMax = (CAR.lateralBase + CAR.downforceLat * v * v) * surf.grip;
 
-    const yawCap = Math.min(
-      CAR.maxYawLow,
-      aLatMax / Math.max(v, 1)
-    );
+    const yawCap = Math.min(CAR.maxYawLow, aLatMax / Math.max(v, 1));
 
     const lowSpeed = THREE.MathUtils.clamp(
       Math.abs(nextForwardSpeed) / 5,
       0.12,
-      1
+      1,
     );
 
     const steeringRate =
-      c.steer *
-      yawCap *
-      lowSpeed *
-      (nextForwardSpeed >= 0 ? 1 : -1);
+      c.steer * yawCap * lowSpeed * (nextForwardSpeed >= 0 ? 1 : -1);
 
-    const collisionSpin =
-      collision.spin * collisionBlend;
+    const collisionSpin = collision.spin * collisionBlend;
 
     // ==========================================
     // TRACK WALL
@@ -907,26 +822,18 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     const wallLimit = WALL_OFFSET - 1.15;
 
-    if (
-      active &&
-      Math.abs(offset) > wallLimit &&
-      trackNormals[track.index]
-    ) {
+    if (active && Math.abs(offset) > wallLimit && trackNormals[track.index]) {
       const side = Math.sign(offset);
 
       const n = trackNormals[track.index];
 
       const outward =
-        (velocity.current.x * n.x +
-          velocity.current.z * n.z) *
-        side;
+        (velocity.current.x * n.x + velocity.current.z * n.z) * side;
 
       if (outward > 0) {
-        velocity.current.x -=
-          n.x * side * outward * 1.35;
+        velocity.current.x -= n.x * side * outward * 1.35;
 
-        velocity.current.z -=
-          n.z * side * outward * 1.35;
+        velocity.current.z -= n.z * side * outward * 1.35;
 
         velocity.current.multiplyScalar(0.8);
 
@@ -950,7 +857,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
           y: p.y,
           z: p.z - n.z * side * push,
         },
-        true
+        true,
       );
     }
 
@@ -964,7 +871,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         y: current.y,
         z: velocity.current.z,
       },
-      true
+      true,
     );
 
     body.setAngvel(
@@ -973,7 +880,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         y: steeringRate + collisionSpin,
         z: 0,
       },
-      true
+      true,
     );
 
     // ==========================================
@@ -984,87 +891,56 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     if (forwardSpeed < -0.5) {
       targetRpm =
-        CAR.idleRpm +
-        Math.min(1, -forwardSpeed / CAR.reverseSpeed) *
-          3500;
+        CAR.idleRpm + Math.min(1, -forwardSpeed / CAR.reverseSpeed) * 3500;
     } else {
-      const fraction = THREE.MathUtils.clamp(
-        v / tops[c.gear - 1],
-        0,
-        1
-      );
+      const fraction = THREE.MathUtils.clamp(v / tops[c.gear - 1], 0, 1);
 
-      targetRpm =
-        CAR.idleRpm +
-        fraction * (CAR.maxRpm - CAR.idleRpm);
+      targetRpm = CAR.idleRpm + fraction * (CAR.maxRpm - CAR.idleRpm);
 
       if (c.gear === 1 && v < 6) {
         targetRpm = Math.max(
           targetRpm,
-          CAR.idleRpm +
-            c.throttle * 5500 * (1 - v / 6)
+          CAR.idleRpm + c.throttle * 5500 * (1 - v / 6),
         );
       }
     }
 
-    c.rpm = THREE.MathUtils.damp(
-      c.rpm,
-      targetRpm,
-      16,
-      dt
-    );
+    c.rpm = THREE.MathUtils.damp(c.rpm, targetRpm, 16, dt);
 
     // ==========================================
     // G-FORCES AND BODY MOTION
     // ==========================================
 
     const longG = THREE.MathUtils.clamp(
-      ((nextForwardSpeed - forwardSpeed) / dt) / G,
+      (nextForwardSpeed - forwardSpeed) / dt / G,
       -6,
-      4
+      4,
     );
 
-    c.longG = THREE.MathUtils.damp(
-      c.longG,
-      longG,
-      10,
-      dt
-    );
+    c.longG = THREE.MathUtils.damp(c.longG, longG, 10, dt);
 
     c.latG = THREE.MathUtils.damp(
       c.latG,
       (steeringRate * nextForwardSpeed) / G,
       10,
-      dt
+      dt,
     );
 
     const speed = Math.abs(nextForwardSpeed);
 
-    const speedRatio = THREE.MathUtils.clamp(
-      speed / 95,
-      0,
-      1
-    );
+    const speedRatio = THREE.MathUtils.clamp(speed / 95, 0, 1);
 
-    const offTrack = [
-      "kerb",
-      "runoff",
-      "gravel",
-    ].includes(surfaceName);
+    const offTrack = ["kerb", "runoff", "gravel"].includes(surfaceName);
 
     const shakeTarget =
-      (surfaceName === "kerb"
-        ? 1
-        : offTrack
-          ? 0.5
-          : 0) *
+      (surfaceName === "kerb" ? 1 : offTrack ? 0.5 : 0) *
       THREE.MathUtils.clamp(speed / 60, 0, 1);
 
     telemetry.kerbShake = THREE.MathUtils.damp(
       telemetry.kerbShake,
       shakeTarget,
       12,
-      dt
+      dt,
     );
 
     // ==========================================
@@ -1078,14 +954,14 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         visual.rotation.z,
         c.latG * 0.0045,
         8,
-        dt
+        dt,
       );
 
       visual.rotation.x = THREE.MathUtils.damp(
         visual.rotation.x,
         -c.longG * 0.0045,
         8,
-        dt
+        dt,
       );
 
       visual.position.y =
@@ -1096,32 +972,44 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     }
 
     // ==========================================
-    // ENGINE AUDIO
+    // ENGINE AUDIO (silent at standstill, pitch follows speed)
     // ==========================================
 
-    const audio = engine.current;
+    const eng = engine.current;
 
-    if (audio) {
-      if (canDrive && audio.paused) {
-        audio.play().catch(() => {});
-      } else if (!canDrive && !audio.paused) {
-        audio.pause();
-      }
+    if (eng) {
+      if (eng.ctx.state === "suspended") eng.ctx.resume?.();
 
-      const rpmNorm = THREE.MathUtils.clamp(
-        (c.rpm - CAR.idleRpm) /
-          (CAR.maxRpm - CAR.idleRpm),
-        0,
-        1
+      // 0..1 from standstill to top speed; small rev only when launching
+      const speedNorm = THREE.MathUtils.clamp(speed / CAR.gearTops[7], 0, 1);
+      const launchRev = v < 6 ? c.throttle * 0.12 * (1 - v / 6) : 0;
+
+      // Rises with speed, falls when you lift off or brake; never jumps
+      c.audioPitch = THREE.MathUtils.damp(
+        c.audioPitch || 0,
+        speedNorm + launchRev,
+        throttleIn ? 3 : 1.5,
+        dt,
       );
 
-      audio.playbackRate = 0.7 + rpmNorm * 1.5;
+      // Silent when stopped with no throttle, and silent outside the race
+      const moving = THREE.MathUtils.clamp(speed / 2, 0, 1);
+      const level = canDrive
+        ? Math.max(moving * (0.35 + 0.65 * c.throttle), c.throttle * 0.45)
+        : 0;
 
-      audio.volume = THREE.MathUtils.clamp(
-        0.22 + c.throttle * 0.2 + rpmNorm * 0.08,
-        0,
-        1
+      const t = eng.ctx.currentTime;
+      const f = 70 + c.audioPitch * 330;
+
+      eng.oscs.forEach(({ o, mult }) =>
+        o.frequency.setTargetAtTime(f * mult, t, 0.05),
       );
+      eng.filter.frequency.setTargetAtTime(
+        500 + c.audioPitch * 2500 + c.throttle * 600,
+        t,
+        0.08,
+      );
+      eng.master.gain.setTargetAtTime(level * 0.12, t, 0.08);
     }
 
     // ==========================================
@@ -1131,37 +1019,20 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const skidNode = skid.current;
 
     if (skidNode) {
-      const cornering = THREE.MathUtils.clamp(
-        (lateralSpeed - 7) / 10,
-        0,
-        1
-      );
+      const cornering = THREE.MathUtils.clamp((lateralSpeed - 7) / 10, 0, 1);
 
       const lockUp =
         c.brake > 0.9 && v > 35
-          ? THREE.MathUtils.clamp(
-              (v - 35) / 50,
-              0.2,
-              0.6
-            )
+          ? THREE.MathUtils.clamp((v - 35) / 50, 0.2, 0.6)
           : 0;
 
-      const target = Math.max(
-        cornering,
-        lockUp
-      ) * 0.06;
+      const target = Math.max(cornering, lockUp) * 0.06;
 
-      c.skidGain = THREE.MathUtils.damp(
-        c.skidGain,
-        target,
-        14,
-        dt
-      );
+      c.skidGain = THREE.MathUtils.damp(c.skidGain, target, 14, dt);
 
       skidNode.gain.gain.value = c.skidGain;
 
-      skidNode.filter.frequency.value =
-        1200 + cornering * 900;
+      skidNode.filter.frequency.value = 1200 + cornering * 900;
     }
 
     // ==========================================
@@ -1172,11 +1043,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       speed,
       kmh: Math.round(speed * 3.6),
       gear:
-        forwardSpeed < -0.5
-          ? -1
-          : v < 0.8 && c.throttle < 0.05
-            ? 0
-            : c.gear,
+        forwardSpeed < -0.5 ? -1 : v < 0.8 && c.throttle < 0.05 ? 0 : c.gear,
 
       rpm: c.rpm,
       idleRpm: CAR.idleRpm,
@@ -1201,14 +1068,10 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     // SPEEDOMETER
     // ==========================================
 
-    if (
-      hudRef?.current &&
-      telemetry.kmh !== lastSpeed.current
-    ) {
+    if (hudRef?.current && telemetry.kmh !== lastSpeed.current) {
       lastSpeed.current = telemetry.kmh;
 
-      hudRef.current.textContent =
-        `${telemetry.kmh} km/h`;
+      hudRef.current.textContent = `${telemetry.kmh} km/h`;
     }
   });
 
@@ -1248,11 +1111,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
           key={spark.id}
           position={spark.position}
           onDone={() =>
-            setSparks((items) =>
-              items.filter(
-                (item) => item.id !== spark.id
-              )
-            )
+            setSparks((items) => items.filter((item) => item.id !== spark.id))
           }
         />
       ))}
