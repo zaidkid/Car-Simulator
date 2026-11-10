@@ -6,7 +6,7 @@ import * as THREE from "three";
 
 import { game, DRIVERS } from "./gameStore";
 import { grid, raceInfo } from "./Telemetry";
-import { curve } from "./RrackCurve";
+import { curve } from "./Trackcurve";
 import { prepareCarModel } from "./CarModel";
 import { mapCars } from "./Racemap";
 
