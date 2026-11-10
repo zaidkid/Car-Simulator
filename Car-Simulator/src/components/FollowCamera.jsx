@@ -2,7 +2,7 @@ import { useThree, useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-import { telemetry } from "./telemetry";
+import { telemetry } from "./Telemetry";
 
 // Press C to cycle: cockpit -> T-cam (airbox) -> chase
 const MODES = ["cockpit", "tcam", "chase"];
