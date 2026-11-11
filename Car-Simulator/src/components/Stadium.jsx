@@ -3,12 +3,13 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { curve } from "./Trackcurve";
 
-// APEX RACING - F1 trackside environment v5
-// Follows ./TrackCurve, so nothing overlaps other sections of the circuit.
-// New in v5: structures cast real shadows, waving team flags, a cleaner catch
-// fence (no more moire), glass + concrete towers with podiums and colour bands,
-// TV camera towers, a far city skyline, brighter fresh palette, and a blimp
-// circling over the circuit.
+// APEX RACING - F1 trackside environment v6
+// Improvements in v6:
+// - Fine FIA catch-fence mesh + horizontal tension cables (eliminates giant X lattice)
+// - Multi-material building boxes (prevents window textures stretching across roofs)
+// - Dynamic curvature-compensated segment lengths (zero gaps on outer grandstand curves)
+// - Cantilever floodlight rigs, corner brake markers, pit-wall canopies & broadcast chopper
+// - Selective shadow casting & mipmapped crowd textures to eliminate distant shimmering
 
 const PHONE =
   typeof window !== "undefined" &&
@@ -57,13 +58,13 @@ const rnd = (n) => {
   const x = Math.sin(n * 127.1) * 43758.5453;
   return x - Math.floor(x);
 };
-const pick = (arr, n) => arr[Math.floor(n) % arr.length];
+const pick = (arr, n) => arr[Math.floor(Math.abs(n)) % arr.length];
 
-const SEAT = ["#2b4a7a", "#3a5f97", "#c43c3c", "#e9edf2", "#f2b134", "#1f2b3d"];
+const SEAT = ["#1e3a6e", "#2b5299", "#c8102e", "#e9edf2", "#f5a623", "#152238"];
 const BLDG = ["#f4f1ea", "#e8ecf1", "#ffffff", "#f0dfc8", "#d8e4ee"];
 const GLASS = ["#ffffff", "#dbe8f5", "#c9dcef", "#eef4fa", "#d4f0f0"];
 const GREENS = ["#2f7a38", "#3f8f40", "#2a6a34", "#55a046", "#2f8a4a"];
-const GRASS = ["#4a8f3e", "#5aa24b"];
+const GRASS = ["#46893a", "#529944"];
 const FAR = ["#c8d4e0", "#b9c8d8", "#d9e2ec", "#aebfd0"];
 const TIERS = [28, 44, 62];
 const TEAMS = ["#3671ff", "#e10600", "#ff8700", "#00d2be", "#0b1b3a"];
@@ -77,7 +78,10 @@ const tex = (w, h, draw) => {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = PHONE ? 2 : 4;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = PHONE ? 2 : 8;
   return t;
 };
 
@@ -100,13 +104,17 @@ const adTex = (flip, repeat = 1) => {
       g.fillStyle = bg;
       g.fillRect(x, 0, 256, h);
 
+      // crisp top & bottom border trim
+      g.fillStyle = "rgba(0,0,0,0.18)";
+      g.fillRect(x, 0, 256, 8);
+
       // soft diagonal accent
       g.fillStyle = "rgba(255,255,255,0.12)";
       g.beginPath();
-      g.moveTo(x + 180, 0);
+      g.moveTo(x + 175, 0);
       g.lineTo(x + 256, 0);
-      g.lineTo(x + 226, h);
-      g.lineTo(x + 150, h);
+      g.lineTo(x + 220, h);
+      g.lineTo(x + 140, h);
       g.fill();
 
       // shrink the text until it fits
@@ -119,10 +127,10 @@ const adTex = (flip, repeat = 1) => {
       } while (g.measureText(name).width > 214 && size > 20);
 
       g.fillStyle = fg;
-      g.fillText(name, x + 128, h / 2 - 6);
+      g.fillText(name, x + 128, h / 2 - 4);
 
       g.fillStyle = "#e10600";
-      g.fillRect(x, h - 12, 256, 12);
+      g.fillRect(x, h - 14, 256, 14);
     });
   });
 
@@ -131,133 +139,216 @@ const adTex = (flip, repeat = 1) => {
   return t;
 };
 
-const crowdTex = tex(2048, 256, (g, w, h) => {
-  g.fillStyle = "#1b2433";
+// High-density stadium crowd texture (avoids blocky stretching on grandstands)
+const crowdTex = tex(1024, 256, (g, w, h) => {
+  g.fillStyle = "#18202c";
   g.fillRect(0, 0, w, h);
+
   const shirts = [
-    "#e6e6e6", "#d12f3a", "#2a4f9a", "#f0c24d", "#2a2f38",
-    "#8a99ad", "#19b5a8", "#ff8700", "#ffffff", "#3671ff",
+    "#f3f4f6", "#e10600", "#2563eb", "#fbbf24", "#1f2937",
+    "#9ca3af", "#00d2be", "#ff8700", "#ffffff", "#3b82f6",
   ];
   const skins = ["#f1c9a5", "#c68e63", "#8d5a3b", "#e8b896", "#5e3b26"];
 
-  // two rows of people so the stands look full
-  for (let row = 0; row < 2; row++) {
-    for (let x = 6; x < w; x += 30 + Math.random() * 18) {
-      if (Math.random() < 0.08) continue;
-      const y = h - 150 - row * 34 - Math.random() * 20;
+  for (let row = 0; row < 4; row++) {
+    const baseY = 38 + row * 52;
+    // subtle aisle step shadow
+    g.fillStyle = "rgba(0,0,0,0.35)";
+    g.fillRect(0, baseY + 34, w, 12);
 
-      g.fillStyle = shirts[Math.floor(Math.random() * shirts.length)];
-      g.fillRect(x, y + 36, 34, 110);
+    for (let x = 4; x < w; x += 14 + (rnd(x * (row + 1)) * 8)) {
+      if (rnd(x + row * 19) < 0.08) continue;
+      const y = baseY + (rnd(x * 3.1 + row) - 0.5) * 8;
 
-      g.fillStyle = skins[Math.floor(Math.random() * skins.length)];
+      // shoulders/torso
+      g.fillStyle = shirts[Math.floor(rnd(x * 7.3 + row * 13) * shirts.length)];
       g.beginPath();
-      g.arc(x + 17, y + 20, 15, 0, Math.PI * 2);
+      g.roundRect(x, y + 10, 14, 30, 4);
       g.fill();
 
-      if (Math.random() < 0.25) g.fillRect(x + 30, y + 6, 7, 40); // raised arm
+      // head/cap
+      const hasCap = rnd(x * 2.3 + row) < 0.35;
+      g.fillStyle = hasCap
+        ? shirts[Math.floor(rnd(x * 5.1 + row) * shirts.length)]
+        : skins[Math.floor(rnd(x * 11.7 + row) * skins.length)];
+      g.beginPath();
+      g.arc(x + 7, y + 6, 5.5, 0, Math.PI * 2);
+      g.fill();
     }
   }
 });
+crowdTex.repeat.set(2.5, 1);
 
-// Catch fence: dark diamond mesh on a transparent background. Cells are large
-// enough to avoid shimmering at distance.
-const netTex = tex(64, 64, (g, w, h) => {
+// FIA-style catch fence: fine wire mesh + horizontal steel tension cables
+const netTex = tex(128, 128, (g, w, h) => {
   g.clearRect(0, 0, w, h);
-  g.strokeStyle = "#1b1f26";
-  g.lineWidth = 6;
-  g.beginPath();
-  g.moveTo(0, 0); g.lineTo(w, h);
-  g.moveTo(w, 0); g.lineTo(0, h);
-  g.stroke();
-});
-netTex.repeat.set(LEN / 2.4, 5 / 2.4);
 
-// Big screen content
+  // Horizontal steel tension cables
+  g.strokeStyle = "rgba(30, 36, 44, 0.85)";
+  g.lineWidth = 3.5;
+  for (const y of [16, 48, 80, 112]) {
+    g.beginPath();
+    g.moveTo(0, y);
+    g.lineTo(w, y);
+    g.stroke();
+  }
+
+  // Fine chain-link diamond wire
+  g.strokeStyle = "rgba(42, 50, 60, 0.72)";
+  g.lineWidth = 2.2;
+  const step = 32;
+  for (let x = -w; x <= w * 2; x += step) {
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x + h, h);
+    g.moveTo(x + h, 0);
+    g.lineTo(x, h);
+    g.stroke();
+  }
+});
+netTex.repeat.set(LEN * 0.85, 1.8);
+
+// Big screen content with live timing leaderboard graphics
 const screenTex = tex(512, 256, (g, w, h) => {
   const grad = g.createLinearGradient(0, 0, w, h);
-  grad.addColorStop(0, "#0a1b45");
-  grad.addColorStop(1, "#1a3d91");
+  grad.addColorStop(0, "#081229");
+  grad.addColorStop(1, "#122a5c");
   g.fillStyle = grad;
   g.fillRect(0, 0, w, h);
 
+  // Top & bottom broadcast bars
   g.fillStyle = "#e10600";
-  g.fillRect(0, 0, w, 16);
-  g.fillRect(0, h - 16, w, 16);
+  g.fillRect(0, 0, w, 18);
+  g.fillStyle = "#0f172a";
+  g.fillRect(0, h - 28, w, 28);
 
+  // Left live timing sidebar on the jumbo screen
+  g.fillStyle = "rgba(15, 23, 42, 0.85)";
+  g.fillRect(14, 28, 130, h - 66);
+  const drivers = [
+    ["1", "VER", "#3671ff"],
+    ["2", "HAM", "#e10600"],
+    ["3", "NOR", "#ff8700"],
+    ["4", "LEC", "#e10600"],
+  ];
+  g.font = "bold 20px Arial";
+  drivers.forEach(([pos, code, col], idx) => {
+    const y = 52 + idx * 38;
+    g.fillStyle = col;
+    g.fillRect(22, y - 14, 5, 22);
+    g.fillStyle = "#ffffff";
+    g.textAlign = "left";
+    g.fillText(`${pos}  ${code}`, 34, y);
+  });
+
+  // Main broadcast feed graphic
   g.fillStyle = "#ffffff";
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.font = "italic 900 74px Arial";
-  g.fillText("APEX RACING", w / 2, h / 2 - 22);
-  g.font = "700 30px Arial";
-  g.fillStyle = "#9fc2ff";
-  g.fillText("WORLD CHAMPIONSHIP  ·  LIVE", w / 2, h / 2 + 46);
+  g.font = "italic 900 54px Arial";
+  g.fillText("APEX RACING", w * 0.63, h / 2 - 20);
+  g.font = "700 22px Arial";
+  g.fillStyle = "#38bdf8";
+  g.fillText("WORLD CHAMPIONSHIP · LIVE", w * 0.63, h / 2 + 28);
 });
 
-// Building facades: 4 columns x 4 floors per tile
+// Building facades: 4 columns x 4 floors per tile (deterministic architectural windows)
 const facadeBase = {
   glass: tex(256, 256, (g, w, h) => {
     const grad = g.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#a9c8e2");
-    grad.addColorStop(1, "#6a90b0");
+    grad.addColorStop(0, "#8ab4d6");
+    grad.addColorStop(1, "#4b7496");
     g.fillStyle = grad;
     g.fillRect(0, 0, w, h);
 
     for (let r = 0; r < 4; r++) {
+      // spandrel glass band between floors
+      g.fillStyle = "#243748";
+      g.fillRect(0, r * 64, w, 10);
+
       for (let c = 0; c < 4; c++) {
-        const lit = Math.random() < 0.07;
+        const seed = r * 17 + c * 31;
+        const lit = rnd(seed) < 0.14;
         g.fillStyle = lit
-          ? "#f6e7b0"
-          : `rgba(${20 + Math.random() * 25},${50 + Math.random() * 30},${85 + Math.random() * 35},0.55)`;
-        g.fillRect(c * 64 + 3, r * 64 + 3, 58, 58);
+          ? "#fdf0b8"
+          : `rgba(${25 + rnd(seed + 1) * 20},${55 + rnd(seed + 2) * 30},${90 + rnd(seed + 3) * 35},0.7)`;
+        g.fillRect(c * 64 + 4, r * 64 + 12, 56, 48);
+
+        // subtle vertical curtain-wall reflection highlight
+        g.fillStyle = "rgba(255,255,255,0.12)";
+        g.fillRect(c * 64 + 8, r * 64 + 12, 12, 48);
       }
     }
 
-    g.strokeStyle = "#2b3d50";
-    g.lineWidth = 3;
+    // Mullion grid
+    g.strokeStyle = "#1e2d3d";
+    g.lineWidth = 4;
     for (let i = 0; i <= 4; i++) {
       g.beginPath();
-      g.moveTo(i * 64, 0); g.lineTo(i * 64, h);
-      g.moveTo(0, i * 64); g.lineTo(w, i * 64);
+      g.moveTo(i * 64, 0);
+      g.lineTo(i * 64, h);
       g.stroke();
     }
   }),
 
   concrete: tex(256, 256, (g, w, h) => {
-    g.fillStyle = "#e6e9ee";
+    g.fillStyle = "#e2e6ec";
     g.fillRect(0, 0, w, h);
 
     for (let r = 0; r < 4; r++) {
       const y = r * 64;
 
-      g.fillStyle = "#d3d9e0"; // floor slab
-      g.fillRect(0, y, w, 22);
+      // architectural precast slab + shadow line
+      g.fillStyle = "#cfd6df";
+      g.fillRect(0, y, w, 18);
+      g.fillStyle = "#9aa5b4";
+      g.fillRect(0, y + 18, w, 3);
 
       for (let c = 0; c < 4; c++) {
-        const lit = Math.random() < 0.1;
-        g.fillStyle = lit ? "#f3e2a6" : "#41566e";
-        g.fillRect(c * 64 + 4, y + 24, 56, 34);
+        const seed = r * 23 + c * 41 + 9;
+        const lit = rnd(seed) < 0.12;
+        g.fillStyle = lit ? "#f5e4a8" : "#2f4154";
+        g.fillRect(c * 64 + 8, y + 24, 48, 34);
+
+        // window frame
+        g.strokeStyle = "#5c6b7c";
+        g.lineWidth = 2;
+        g.strokeRect(c * 64 + 8, y + 24, 48, 34);
       }
 
-      g.fillStyle = "#c7ced6";
-      for (let c = 0; c <= 4; c++) g.fillRect(c * 64 - 2, y + 22, 4, 40);
+      // vertical pilasters
+      g.fillStyle = "#c4ccd6";
+      for (let c = 0; c <= 4; c++) g.fillRect(c * 64 - 3, y + 18, 6, 46);
     }
   }),
 };
 
-const facadeTex = (style, h) => {
+// Creates a 6-sided material list for buildings so roofs don't stretch window textures
+const makeBuildingMaterials = (style, h, metalness, roughness) => {
   const t = facadeBase[style].clone();
   t.needsUpdate = true;
-  t.repeat.set(3, h / 14);
-  return t;
+  t.repeat.set(2, Math.round(h / 12));
+
+  const sideMat = new THREE.MeshStandardMaterial({
+    map: t,
+    metalness,
+    roughness,
+  });
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: style === "glass" ? "#33475b" : "#9aa3ae",
+    roughness: 0.85,
+    metalness: 0.2,
+  });
+
+  // BoxGeometry face order: +x, -x, +y (top), -y (bottom), +z, -z
+  return [sideMat, sideMat, roofMat, roofMat, sideMat, sideMat];
 };
 
 // ---------- instancing ----------
 const GEOS = {
   box: new THREE.BoxGeometry(1, 1, 1),
-  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
+  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 10),
   ico: new THREE.IcosahedronGeometry(0.5, 1),
-  // extra segments along z so a flag can ripple
   flag: new THREE.BoxGeometry(1, 1, 1, 1, 1, 12),
 };
 
@@ -271,12 +362,21 @@ const waveShader = (uTime) => (shader) => {
       `#include <begin_vertex>
        float wv = position.z + 0.5;
        float ph = instanceMatrix[3].x * 0.05 + instanceMatrix[3].z * 0.05;
-       transformed.x += sin(position.z * 7.0 + uTime * 4.0 + ph) * 14.0 * wv;
-       transformed.y += sin(position.z * 5.0 + uTime * 3.0 + ph) * 0.12 * wv;`
+       transformed.x += sin(position.z * 7.0 + uTime * 4.5 + ph) * 12.0 * wv;
+       transformed.y += sin(position.z * 5.0 + uTime * 3.2 + ph) * 0.12 * wv;`
     );
 };
 
-function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = false, ...mat }) {
+function Instanced({
+  items,
+  geo = "box",
+  color = "#fff",
+  cast = false,
+  receive = false,
+  wave = false,
+  matArray = null,
+  ...mat
+}) {
   const ref = useRef();
   const uTime = useMemo(() => ({ value: 0 }), []);
   const animateWave = wave && !PHONE;
@@ -297,14 +397,14 @@ function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = fa
     d.rotation.order = "YXZ";
     items.forEach((it, i) => {
       d.position.set(...it.p);
-      d.rotation.set(0, it.ry || 0, it.rz || 0);
+      d.rotation.set(it.rx || 0, it.ry || 0, it.rz || 0);
       d.scale.set(...it.s);
       d.updateMatrix();
       m.setMatrixAt(i, d.matrix);
       m.setColorAt(i, c.set(it.c || color));
     });
     m.instanceMatrix.needsUpdate = true;
-    m.instanceColor.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
     m.computeBoundingSphere();
   }, [items, color]);
 
@@ -314,66 +414,100 @@ function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = fa
     <instancedMesh
       ref={ref}
       key={items.length}
-      args={[GEOS[geo], undefined, items.length]}
+      args={[GEOS[geo], matArray || undefined, items.length]}
       frustumCulled
-      receiveShadow={false}
-      castShadow={false}
+      castShadow={cast && !PHONE}
+      receiveShadow={receive && !PHONE}
     >
-      <meshStandardMaterial
-        {...mat}
-        onBeforeCompile={onBeforeCompile}
-        customProgramCacheKey={() => (animateWave ? "stadium-wave" : "stadium-plain")}
-      />
+      {!matArray && (
+        <meshStandardMaterial
+          {...mat}
+          onBeforeCompile={onBeforeCompile}
+          customProgramCacheKey={() =>
+            animateWave ? "stadium-wave" : "stadium-plain"
+          }
+        />
+      )}
     </instancedMesh>
   );
 }
 
-// Stadium meshes are intentionally non-shadow-casting for stable frame times.
- // Keep the cast metadata for compatibility with the existing material table.
 const MATS = {
-  grass: { color: "#4a8f3e", roughness: 1 },
-  adsP: { map: adTex(false), roughness: 0.35 },
-  adsN: { map: adTex(true), roughness: 0.35 },
-  net: { map: netTex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 1 },
-  fpost: { geo: "cyl", color: "#2b333d", metalness: 0.7, roughness: 0.4, cast: true },
-  seats: { roughness: 0.8 },
-  crowd: { map: crowdTex, roughness: 1 },
-  rear: { color: "#2a3340", cast: true },
-  posts: { geo: "cyl", color: "#dfe4ea", metalness: 0.6, roughness: 0.4, cast: true },
-  steel: { color: "#aab4c0", metalness: 0.6, roughness: 0.4, cast: true },
-  roof: { color: "#f3f5f7", emissive: "#2a2d33", roughness: 0.6, side: THREE.DoubleSide, cast: true },
-  roofUnder: { color: "#9aa4b0", roughness: 0.8 },
-  fascia: { roughness: 0.45 },
-  flagpoles: { geo: "cyl", color: "#e8ecf1", metalness: 0.6, roughness: 0.4 },
-  flags: { geo: "flag", wave: true, roughness: 0.8, side: THREE.DoubleSide, cast: true },
-  paddock: { color: "#dfe5ec", roughness: 0.7, cast: true },
-  paddockGlass: { color: "#1d2f45", metalness: 0.6, roughness: 0.15 },
-  paddockRoof: { color: "#c7cfd8", roughness: 0.6, cast: true },
-  garage: { roughness: 0.5 },
+  grass: { color: "#4a8f3e", roughness: 0.95, receive: true },
+  adsP: { map: adTex(false), roughness: 0.35, receive: true },
+  adsN: { map: adTex(true), roughness: 0.35, receive: true },
+  net: {
+    map: netTex,
+    transparent: true,
+    alphaTest: 0.18,
+    opacity: 0.88,
+    side: THREE.DoubleSide,
+    roughness: 0.6,
+  },
+  fpost: { geo: "cyl", color: "#2b333d", metalness: 0.7, roughness: 0.4 },
+  seats: { roughness: 0.75, receive: true },
+  crowd: { map: crowdTex, roughness: 0.9 },
+  rear: { color: "#232c38", roughness: 0.7, cast: true },
+  posts: { geo: "cyl", color: "#dfe4ea", metalness: 0.6, roughness: 0.35 },
+  steel: { color: "#9aa5b4", metalness: 0.65, roughness: 0.35 },
+  roof: {
+    color: "#f8fafc",
+    emissive: "#1e242b",
+    roughness: 0.5,
+    side: THREE.DoubleSide,
+    cast: true,
+  },
+  roofUnder: { color: "#8893a2", roughness: 0.8 },
+  fascia: { roughness: 0.4 },
+  flagpoles: { geo: "cyl", color: "#e8ecf1", metalness: 0.6, roughness: 0.35 },
+  flags: { geo: "flag", wave: true, roughness: 0.7, side: THREE.DoubleSide },
+  paddock: { color: "#e2e8f0", roughness: 0.6, cast: true, receive: true },
+  paddockGlass: { color: "#13263b", metalness: 0.75, roughness: 0.12 },
+  paddockRoof: { color: "#cbd5e1", roughness: 0.5, cast: true },
+  garage: { roughness: 0.45 },
   bridge: { color: "#e6ebf0", metalness: 0.4, roughness: 0.45, cast: true },
-  bridgeBanner: { map: adTex(false, 6), roughness: 0.4 },
-  trunks: { geo: "cyl", color: "#4a3524", roughness: 1, cast: true },
-  leaves: { geo: "ico", roughness: 1, cast: true },
-  b0: { map: facadeTex("concrete", TIERS[0]), roughness: 0.65, cast: true },
-  b1: { map: facadeTex("concrete", TIERS[1]), roughness: 0.65, cast: true },
-  b2: { map: facadeTex("concrete", TIERS[2]), roughness: 0.65, cast: true },
-  g0: { map: facadeTex("glass", TIERS[0]), metalness: 0.35, roughness: 0.28, cast: true },
-  g1: { map: facadeTex("glass", TIERS[1]), metalness: 0.35, roughness: 0.28, cast: true },
-  g2: { map: facadeTex("glass", TIERS[2]), metalness: 0.35, roughness: 0.28, cast: true },
-  crowns: { color: "#4b5561", roughness: 0.8, cast: true },
-  podium: { roughness: 0.75, cast: true },
-  accent: { roughness: 0.4 },
+  bridgeBanner: { map: adTex(false, 6), roughness: 0.35 },
+  trunks: { geo: "cyl", color: "#4a3524", roughness: 1 },
+  leaves: { geo: "ico", roughness: 0.9, cast: true },
+  b0: {
+    matArray: makeBuildingMaterials("concrete", TIERS[0], 0.1, 0.7),
+    cast: true,
+  },
+  b1: {
+    matArray: makeBuildingMaterials("concrete", TIERS[1], 0.1, 0.7),
+    cast: true,
+  },
+  b2: {
+    matArray: makeBuildingMaterials("concrete", TIERS[2], 0.1, 0.7),
+    cast: true,
+  },
+  g0: {
+    matArray: makeBuildingMaterials("glass", TIERS[0], 0.45, 0.2),
+    cast: true,
+  },
+  g1: {
+    matArray: makeBuildingMaterials("glass", TIERS[1], 0.45, 0.2),
+    cast: true,
+  },
+  g2: {
+    matArray: makeBuildingMaterials("glass", TIERS[2], 0.45, 0.2),
+    cast: true,
+  },
+  crowns: { color: "#475569", roughness: 0.8 },
+  podium: { roughness: 0.7, cast: true, receive: true },
+  accent: { roughness: 0.35 },
   spires: { geo: "cyl", color: "#cfd6de", metalness: 0.7, roughness: 0.3 },
-  poles: { geo: "cyl", color: "#e0e5eb", metalness: 0.7, cast: true },
-  lamps: { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 2 },
+  poles: { geo: "cyl", color: "#cbd5e1", metalness: 0.7, roughness: 0.35 },
+  lamps: { color: "#ffffff", emissive: "#fff8e7", emissiveIntensity: 2.8 },
+  brakeBoard: { roughness: 0.4 },
+  marshalHut: { color: "#f8fafc", roughness: 0.6 },
   skyline: { roughness: 0.9 },
   screens: {
     map: screenTex,
     emissiveMap: screenTex,
     emissive: "#ffffff",
-    emissiveIntensity: 0.9,
-    roughness: 0.4,
-    cast: true,
+    emissiveIntensity: 0.95,
+    roughness: 0.3,
   },
 };
 
@@ -393,47 +527,103 @@ function generate() {
     const isMain = t < 0.14 || t > 0.965; // start / finish straight
     const wantStand = isMain || i % 9 < 6;
 
+    // Look ahead for upcoming sharp corner to place 150m/100m/50m brake boards
+    const tAhead = (t + 0.035) % 1;
+    const tanAhead = curve.getTangentAt(tAhead);
+    const tanAhead2 = curve.getTangentAt((tAhead + 1 / SEGMENTS) % 1);
+    const knAhead =
+      (tanAhead.x * tanAhead2.z - tanAhead.z * tanAhead2.x) / (L / SEGMENTS);
+
     for (const side of [-1, 1]) {
       const seed = i * 31 + side * 7;
       const inner = side === Math.sign(kn);
       const tight = (r) => inner && Math.abs(kn) > 1 / r;
 
+      // Dynamic length compensation so outer curves don't gap and inner curves don't overlap
+      const arcScale = (o) =>
+        THREE.MathUtils.clamp(1 - side * kn * (TRACK_OFFSET + o), 0.72, 1.38);
+
       const free = (o, r) => {
-        const p = point.clone().addScaledVector(normal, side * (TRACK_OFFSET + o));
+        const p = point
+          .clone()
+          .addScaledVector(normal, side * (TRACK_OFFSET + o));
         return farMin(p.x, p.z, t) > r;
       };
 
-      const add = (k, o, h, s, c, dt = 0, rz = 0) => {
-        const p = point.clone().addScaledVector(normal, side * (TRACK_OFFSET + o)).addScaledVector(tan, dt);
-        g[k].push({ p: [p.x, h, p.z], s, ry: yaw, rz, c });
+      const add = (k, o, h, s, c, dt = 0, rz = 0, rx = 0) => {
+        const p = point
+          .clone()
+          .addScaledVector(normal, side * (TRACK_OFFSET + o))
+          .addScaledVector(tan, dt);
+        g[k].push({ p: [p.x, h, p.z], s, ry: yaw, rz, rx, c });
       };
 
-      // verge, ad wall behind the barrier, catch fence (posts lean inward)
-      add("grass", 11, 0.04, [38, 0.08, LEN], pick(GRASS, i));
-      add(side > 0 ? "adsP" : "adsN", -5, 1.1, [0.4, 2.2, LEN]);
-      add("net", -2, 3.5, [0.05, 5, LEN]);
-      if (i % 2 === 0) add("fpost", -2, 3, [0.18, 6.2, 0.18], null, 0, side * 0.08);
+      const sLenAd = LEN * arcScale(-5);
+      const sLenFence = LEN * arcScale(-2);
 
-      // paddock + garages along the start / finish straight (one side)
+      // verge, ad wall behind the barrier, catch fence (posts lean inward toward track)
+      add("grass", 11, 0.04, [38, 0.08, LEN * arcScale(11)], pick(GRASS, i));
+      add(side > 0 ? "adsP" : "adsN", -5, 1.1, [0.4, 2.2, sLenAd]);
+      add("net", -2, 3.6, [0.04, 4.8, sLenFence]);
+
+      // Catch fence posts + top curved debris overhang
+      if (i % 2 === 0) {
+        add("fpost", -2, 3.0, [0.16, 6.0, 0.16], null, 0, -side * 0.06);
+        add("fpost", -2.35, 6.05, [0.12, 0.9, 0.12], null, 0, -side * 0.65);
+      }
+
+      // Brake marker boards (on outside of approaching sharp corners)
+      if (
+        Math.abs(knAhead) > 1 / 160 &&
+        side === -Math.sign(knAhead) &&
+        Math.abs(kn) < 1 / 250 &&
+        i % 3 < 3
+      ) {
+        add(
+          "brakeBoard",
+          -6.2,
+          1.1,
+          [1.6, 1.1, 0.15],
+          pick(["#111827", "#e10600", "#0f766e"], i)
+        );
+      }
+
+      // Trackside Marshal Post every 16 segments
+      if (i % 16 === 8 && side < 0 && free(1, 25)) {
+        add("marshalHut", 0.5, 1.4, [2.6, 2.8, 3.2]);
+        add("fascia", 0.5, 2.9, [2.8, 0.25, 3.4], "#ff6b00");
+      }
+
+      // paddock + garages + pit-wall telemetry boxes along the start / finish straight
       const paddock = isMain && side > 0 && free(14, 42);
 
       if (paddock) {
-        add("paddock", 14, 4, [12, 8, LEN]);
-        add("garage", 7.8, 1.8, [0.3, 3, LEN * 0.7], pick(TEAMS, i));
-        add("paddockGlass", 7.9, 5.9, [0.15, 2.2, LEN * 0.96]); // upper-floor hospitality glazing
-        add("paddockRoof", 11.2, 8.15, [15, 0.3, LEN]); // overhanging roof
+        add("paddock", 14, 4.2, [12, 8.4, LEN]);
+        add("garage", 7.8, 1.8, [0.35, 3.2, LEN * 0.72], pick(TEAMS, i));
+        add("paddockGlass", 7.9, 5.8, [0.18, 2.4, LEN * 0.96]); // VIP hospitality lounge
+        add("paddockRoof", 11.2, 8.5, [15.5, 0.35, LEN]); // overhanging modern wing roof
+
+        // Pit wall timing stand right behind the trackside ad wall
+        if (i % 2 === 0) {
+          add("paddockGlass", -3.8, 2.4, [1.4, 1.5, 4.2]);
+          add("paddockRoof", -3.8, 3.25, [1.8, 0.18, 4.6], pick(TEAMS, i));
+        }
       }
 
       // grandstand: more rows on the main straight, never on a tight inside corner
-      const rows = isMain ? 11 : 8;
+      const rows = isMain ? 12 : 8;
       const stand =
-        wantStand && !(isMain && side > 0) && !tight(140) && free(BASE + rows * 0.8, 32 + rows * 0.8);
+        wantStand &&
+        !(isMain && side > 0) &&
+        !tight(140) &&
+        free(BASE + rows * 0.8, 32 + rows * 0.8);
 
       if (stand) {
         const width = rows * 1.6;
         const oEnd = BASE + width;
         const top = 1.2 + (rows - 1) * 0.8;
-        const roofH = 5.2 + rows * 0.8;
+        const roofH = 5.4 + rows * 0.8;
+        const sLenStand = LEN * arcScale(BASE + width * 0.5);
 
         // some sections are painted in a team colour
         const section = i % 7 === 0 ? pick(TEAMS, i >> 1) : null;
@@ -441,51 +631,109 @@ function generate() {
         for (let r = 0; r < rows; r++) {
           const o = BASE + 0.8 + r * 1.6;
           const h = 1.2 + r * 0.8;
-          add("seats", o, h / 2, [1.6, h, LEN], section || pick(SEAT, r + (i >> 1)));
-          add("crowd", o - 0.1, h + 0.45, [1.0, 0.9, LEN]);
+          const rowLen = LEN * arcScale(o);
+          add(
+            "seats",
+            o,
+            h / 2,
+            [1.62, h, rowLen],
+            section || pick(SEAT, r + (i >> 1))
+          );
+          // Slight tilt toward the track so crowd planes don't shimmer edge-on
+          add(
+            "crowd",
+            o - 0.15,
+            h + 0.45,
+            [0.9, 0.95, rowLen * 0.98],
+            null,
+            0,
+            -side * 0.18
+          );
         }
 
-        add("rear", oEnd + 0.4, (top + 3) / 2, [0.8, top + 3, LEN]);
-        add("posts", oEnd + 0.6, (roofH - 1) / 2, [1, roofH - 1, 1], null, LEN / 2);
-        add("posts", BASE - 1, (roofH - 1) / 2, [0.35, roofH - 1, 0.35]);
+        add("rear", oEnd + 0.4, (top + 3) / 2, [0.8, top + 3, sLenStand]);
+        add(
+          "posts",
+          oEnd + 0.6,
+          (roofH - 1) / 2,
+          [0.9, roofH - 1, 0.9],
+          null,
+          sLenStand * 0.45
+        );
+        add("posts", BASE - 1, (roofH - 1) / 2, [0.32, roofH - 1, 0.32]);
 
         // team-coloured fascia board along the front of the roof
-        add("fascia", BASE - 1.2, roofH - 1.3, [0.3, 1.0, LEN * 0.98], pick(TEAMS, i >> 2));
+        add(
+          "fascia",
+          BASE - 1.2,
+          roofH - 1.25,
+          [0.35, 1.05, sLenStand * 0.99],
+          pick(TEAMS, i >> 2)
+        );
 
         // white gabled canopy + underside + ridge beam
-        const span = width + 2;
+        const span = width + 2.4;
         const q = span / 4;
         const o0 = BASE + width / 2;
         const drop = q * Math.tan(TILT);
 
-        for (const [dx, sg] of [[-q, -1], [q, 1]]) {
-          add("roof", o0 + dx, roofH - drop, [span / 2 + 0.2, 0.2, LEN * 0.98], null, 0, sg * side * TILT);
-          add("roofUnder", o0 + dx, roofH - drop - 0.18, [span / 2, 0.08, LEN * 0.96], null, 0, sg * side * TILT);
+        for (const [dx, sg] of [
+          [-q, -1],
+          [q, 1],
+        ]) {
+          add(
+            "roof",
+            o0 + dx,
+            roofH - drop,
+            [span / 2 + 0.25, 0.22, sLenStand * 0.99],
+            null,
+            0,
+            sg * side * TILT
+          );
+          add(
+            "roofUnder",
+            o0 + dx,
+            roofH - drop - 0.18,
+            [span / 2, 0.08, sLenStand * 0.97],
+            null,
+            0,
+            sg * side * TILT
+          );
         }
-        add("steel", o0, roofH + 0.1, [0.4, 0.4, LEN]);
+        add("steel", o0, roofH + 0.12, [0.45, 0.45, sLenStand]);
 
-        if (isMain ? i % 6 === 3 : i % 18 === 3) add("screens", oEnd, roofH - 3.5, [0.5, 4, 9]);
+        if (isMain ? i % 5 === 2 : i % 16 === 3) {
+          add("screens", oEnd - 0.5, roofH - 3.4, [0.5, 4.4, 9.5]);
+        }
       }
 
       // team flags between the ad wall and the fence (they wave in the wind)
       if (i % 3 === 0 && (stand || isMain)) {
-        add("flagpoles", -3, 3.5, [0.12, 7, 0.12]);
-        add("flags", -3, 6.1, [0.04, 1.5, 2.8], pick(TEAMS, i + side + 3), 1.4);
+        add("flagpoles", -3, 3.6, [0.12, 7.2, 0.12]);
+        add(
+          "flags",
+          -3,
+          6.2,
+          [0.04, 1.5, 2.8],
+          pick(TEAMS, i + side + 3),
+          1.4
+        );
       }
 
       // trees: trunk + 3 leaf blobs
-      const to = stand || paddock ? 26 + rnd(seed + 5) * 10 : 8 + rnd(seed + 5) * 14;
+      const to =
+        stand || paddock ? 26 + rnd(seed + 5) * 10 : 8 + rnd(seed + 5) * 14;
 
-      if (rnd(seed + 3) > 0.4 && free(to, 32)) {
+      if (rnd(seed + 3) > 0.38 && free(to, 32)) {
         const dt = (rnd(seed + 11) - 0.5) * LEN;
-        const w = 3.5 + rnd(seed + 9) * 2;
+        const w = 3.6 + rnd(seed + 9) * 2.2;
 
         add("trunks", to, 2, [0.5, 4, 0.5], null, dt);
         for (let b = 0; b < 3; b++)
           add(
             "leaves",
             to + (rnd(seed + b * 3) - 0.5) * 2,
-            5 + rnd(seed + b * 5) * 1.5,
+            5 + rnd(seed + b * 5) * 1.6,
             [w, w * 0.85, w],
             pick(GREENS, rnd(seed + b) * 5),
             dt + (rnd(seed + b * 7) - 0.5) * 2
@@ -493,12 +741,12 @@ function generate() {
       }
 
       // skyline: glass and concrete towers with podium, colour band, crown and spire
-      const bo = 40 + rnd(seed + 23) * 70;
+      const bo = 42 + rnd(seed + 23) * 68;
 
       if (i % 2 === 0 && !tight(200) && free(bo, 45)) {
         const tier = Math.floor(rnd(seed + 17) * 3);
-        const glass = rnd(seed + 37) > 0.5;
-        const bw = 16 + rnd(seed + 41) * 5;
+        const glass = rnd(seed + 37) > 0.45;
+        const bw = 16 + rnd(seed + 41) * 6;
         const height = TIERS[tier];
 
         add(
@@ -509,41 +757,57 @@ function generate() {
           pick(glass ? GLASS : BLDG, rnd(seed + 29) * 5)
         );
 
-        add("podium", bo, 2.5, [bw + 9, 5, bw + 9], pick(BLDG, rnd(seed + 31) * 5)); // low base block
-        add("accent", bo, height * 0.8, [bw + 0.5, 1.6, bw + 0.5], pick(TEAMS, rnd(seed + 47) * 5)); // colour band
+        add(
+          "podium",
+          bo,
+          2.5,
+          [bw + 8, 5, bw + 8],
+          pick(BLDG, rnd(seed + 31) * 5)
+        ); // low base block
+        add(
+          "accent",
+          bo,
+          height * 0.82,
+          [bw + 0.45, 1.5, bw + 0.45],
+          pick(TEAMS, rnd(seed + 47) * 5)
+        ); // colour band
 
         add("crowns", bo, height + 0.6, [bw + 1.2, 1.2, bw + 1.2]); // roof slab
-        add("crowns", bo, height + 2.4, [bw * 0.4, 2.4, bw * 0.4]); // plant room
+        add("crowns", bo, height + 2.4, [bw * 0.42, 2.4, bw * 0.42]); // HVAC plant room
 
         if (tier === 2 && rnd(seed + 43) > 0.35) {
-          add("spires", bo, height + 10, [0.5, 15, 0.5]);
+          add("spires", bo, height + 10, [0.45, 15, 0.45]);
         }
       }
 
       // TV camera towers
-      if (i % 22 === 11 && free(22, 34)) {
-        add("poles", 22, 9, [1.4, 18, 1.4]);
-        add("rear", 22, 18.4, [6, 1.2, 6]);
-        add("paddockGlass", 22, 20, [5.4, 1.8, 5.4]);
-        add("paddockRoof", 22, 21.1, [6.4, 0.4, 6.4]);
-        add("spires", 22, 24, [0.3, 5, 0.3]);
+      if (i % 20 === 10 && free(22, 34)) {
+        add("poles", 22, 9, [1.3, 18, 1.3]);
+        add("rear", 22, 18.4, [5.8, 1.2, 5.8]);
+        add("paddockGlass", 22, 20, [5.2, 1.8, 5.2]);
+        add("paddockRoof", 22, 21.1, [6.2, 0.4, 6.2]);
+        add("spires", 22, 24, [0.25, 5, 0.25]);
       }
 
-      // floodlight towers
+      // Cantilever stadium floodlight towers (angled inward toward the asphalt)
       if (i % 8 === 4 && free(24, 30)) {
-        add("poles", 24, 17, [0.7, 34, 0.7]);
-        add("lamps", 24, 34, [6, 1.2, 2]);
+        add("poles", 24, 16, [0.65, 32, 0.65]);
+        // Cantilever arm reaching toward track
+        add("steel", 21.2, 31.8, [6.2, 0.5, 0.5], null, 0, -side * 0.18);
+        // Floodlight bank hood + emissive LED array angled down at track
+        add("rear", 18.5, 32.5, [2.2, 1.5, 6.4], null, 0, -side * 0.42);
+        add("lamps", 18.3, 32.2, [1.8, 1.2, 6.0], null, 0, -side * 0.42);
       }
     }
   }
 
   // ---------- far city skyline (soft blue-grey, melts into the fog) ----------
-  const FAR_COUNT = 90;
+  const FAR_COUNT = 96;
   for (let k = 0; k < FAR_COUNT; k++) {
     const a = (k / FAR_COUNT) * Math.PI * 2 + (rnd(k * 3.1) - 0.5) * 0.06;
     const rad = TRACK_R + 240 + rnd(k * 5.7) * 170;
     const w = 24 + rnd(k * 7.3) * 34;
-    const h = 45 + Math.pow(rnd(k * 11.9), 2) * 130;
+    const h = 45 + Math.pow(rnd(k * 11.9), 2) * 135;
 
     g.skyline.push({
       p: [CX + rad * Math.cos(a), h / 2, CZ + rad * Math.sin(a)],
@@ -553,9 +817,10 @@ function generate() {
     });
   }
 
-  // ---------- pedestrian bridge over the circuit ----------
-  for (let k = 0; k < 60; k++) {
-    const t = 0.25 + k * 0.01;
+  // ---------- pedestrian bridges over the circuit (up to 2 across the lap) ----------
+  let bridgesBuilt = 0;
+  for (let k = 0; k < 70 && bridgesBuilt < 2; k++) {
+    const t = (0.22 + k * 0.011) % 1;
     const p = curve.getPointAt(t);
     const tan = curve.getTangentAt(t);
     const nrm = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
@@ -563,25 +828,30 @@ function generate() {
     const a = p.clone().addScaledVector(nrm, 31);
     const b = p.clone().addScaledVector(nrm, -31);
 
-    if (farMin(a.x, a.z, t) < 40 || farMin(b.x, b.z, t) < 40) continue;
+    if (farMin(a.x, a.z, t) < 42 || farMin(b.x, b.z, t) < 42) continue;
 
     const yaw = Math.atan2(tan.x, tan.z);
-
     const put = (key, x, y, z, s) => g[key].push({ p: [x, y, z], s, ry: yaw });
 
-    // deck, rails, banner, and a support on each side
-    put("bridge", p.x, 9, p.z, [62, 0.7, 4]);
+    // deck, rails, dual banners (both directions), and side stair towers
+    put("bridge", p.x, 9.2, p.z, [62, 0.8, 4.4]);
 
-    for (const d of [-1.95, 1.95]) {
-      put("steel", p.x + tan.x * d, 9.9, p.z + tan.z * d, [62, 1.1, 0.15]);
+    for (const d of [-2.1, 2.1]) {
+      put("steel", p.x + tan.x * d, 10.1, p.z + tan.z * d, [62, 1.2, 0.18]);
+      put(
+        "bridgeBanner",
+        p.x + tan.x * (d * 1.05),
+        11.0,
+        p.z + tan.z * (d * 1.05),
+        [56, 2.5, 0.14]
+      );
     }
 
-    put("bridgeBanner", p.x - tan.x * 2, 10.9, p.z - tan.z * 2, [56, 2.4, 0.12]);
+    put("bridge", a.x, 4.8, a.z, [2.2, 9.6, 3.2]);
+    put("bridge", b.x, 4.8, b.z, [2.2, 9.6, 3.2]);
 
-    put("bridge", a.x, 4.5, a.z, [1.2, 9, 1.6]);
-    put("bridge", b.x, 4.5, b.z, [1.2, 9, 1.6]);
-
-    break;
+    bridgesBuilt++;
+    k += 28; // space second bridge well apart along the circuit
   }
 
   return g;
@@ -598,8 +868,9 @@ function makeHills() {
   const col = [];
   const idx = [];
 
-  const low = new THREE.Color("#4f8f45");
-  const high = new THREE.Color("#9fb6c8");
+  const low = new THREE.Color("#4a8940");
+  const mid = new THREE.Color("#6e9678");
+  const high = new THREE.Color("#a8bdd0");
   const tmp = new THREE.Color();
 
   for (let r = 0; r <= RINGS; r++) {
@@ -620,11 +891,16 @@ function makeHills() {
       );
 
       // +1 keeps the edges just above the ground plane (no z-fighting)
-      const y = 1 + 120 * h * bump * (0.9 + 0.1 * Math.sin(rad * 0.02 + a * 5));
+      const y = 1 + 125 * h * bump * (0.9 + 0.1 * Math.sin(rad * 0.02 + a * 5));
 
       pos.push(CX + rad * Math.cos(a), y, CZ + rad * Math.sin(a));
 
-      tmp.copy(low).lerp(high, THREE.MathUtils.clamp(y / 110, 0, 1));
+      const alt = THREE.MathUtils.clamp(y / 115, 0, 1);
+      if (alt < 0.5) {
+        tmp.copy(low).lerp(mid, alt * 2);
+      } else {
+        tmp.copy(mid).lerp(high, (alt - 0.5) * 2);
+      }
       col.push(tmp.r, tmp.g, tmp.b);
     }
   }
@@ -649,9 +925,11 @@ function makeHills() {
   return geometry;
 }
 
-// ---------- blimp circling over the circuit ----------
-function Blimp({ altitude = 150, speed = 0.02 }) {
-  const ref = useRef();
+// ---------- blimp & TV helicopter circling over the circuit ----------
+function AerialTraffic({ altitude = 155, speed = 0.02 }) {
+  const blimpRef = useRef();
+  const heliRef = useRef();
+  const rotorRef = useRef();
   const angle = useRef(Math.random() * Math.PI * 2);
   const radius = Math.max(140, TRACK_R * 0.8);
 
@@ -666,7 +944,6 @@ function Blimp({ altitude = 150, speed = 0.02 }) {
         g.fillStyle = "#e10600";
         g.fillRect(0, h * 0.74, w, h * 0.06);
 
-        // sides of the ellipsoid sit at u = 0.25 and u = 0.75
         g.fillStyle = "#e10600";
         g.textAlign = "center";
         g.textBaseline = "middle";
@@ -678,45 +955,82 @@ function Blimp({ altitude = 150, speed = 0.02 }) {
   );
 
   useFrame((_, delta) => {
-    const b = ref.current;
-    if (!b) return;
-
-    angle.current += Math.min(delta, 0.1) * speed;
+    const dt = Math.min(delta, 0.1);
+    angle.current += dt * speed;
     const a = angle.current;
 
-    b.position.set(
-      CX + Math.cos(a) * radius,
-      altitude + Math.sin(a * 5) * 3,
-      CZ + Math.sin(a) * radius
-    );
+    if (blimpRef.current) {
+      blimpRef.current.position.set(
+        CX + Math.cos(a) * radius,
+        altitude + Math.sin(a * 5) * 3,
+        CZ + Math.sin(a) * radius
+      );
+      blimpRef.current.rotation.y = -Math.atan2(Math.cos(a), -Math.sin(a));
+    }
 
-    // nose points along the direction of travel
-    b.rotation.y = -Math.atan2(Math.cos(a), -Math.sin(a));
+    if (heliRef.current) {
+      const ha = -a * 2.2 + 1.5;
+      const hr = radius * 0.62;
+      heliRef.current.position.set(
+        CX + Math.cos(ha) * hr,
+        altitude * 0.62 + Math.sin(ha * 4) * 2,
+        CZ + Math.sin(ha) * hr
+      );
+      heliRef.current.rotation.y = -Math.atan2(-Math.cos(ha), Math.sin(ha));
+      heliRef.current.rotation.z = -0.12; // forward pitch while flying
+    }
+
+    if (rotorRef.current) {
+      rotorRef.current.rotation.y += dt * 28;
+    }
   });
 
   return (
-    <group ref={ref}>
-      <mesh scale={[26, 8, 8]}>
-        <sphereGeometry args={[1, 32, 16]} />
-        <meshStandardMaterial map={skin} roughness={0.5} />
-      </mesh>
+    <>
+      {/* Blimp */}
+      <group ref={blimpRef}>
+        <mesh scale={[26, 8, 8]}>
+          <sphereGeometry args={[1, 32, 16]} />
+          <meshStandardMaterial map={skin} roughness={0.45} />
+        </mesh>
+        <mesh position={[-22, 0, 0]} scale={[6, 0.4, 9]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#e10600" roughness={0.5} />
+        </mesh>
+        <mesh position={[-22, 0, 0]} scale={[6, 9, 0.4]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#e10600" roughness={0.5} />
+        </mesh>
+        <mesh position={[2, -8.4, 0]} scale={[9, 2.4, 3.2]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#2a3340" roughness={0.6} />
+        </mesh>
+      </group>
 
-      {/* tail fins */}
-      <mesh position={[-22, 0, 0]} scale={[6, 0.4, 9]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#e10600" roughness={0.5} />
-      </mesh>
-      <mesh position={[-22, 0, 0]} scale={[6, 9, 0.4]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#e10600" roughness={0.5} />
-      </mesh>
-
-      {/* gondola */}
-      <mesh position={[2, -8.4, 0]} scale={[9, 2.4, 3.2]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#2a3340" roughness={0.6} />
-      </mesh>
-    </group>
+      {/* TV Broadcast Helicopter */}
+      <group ref={heliRef}>
+        <mesh scale={[4.8, 2.2, 2.0]}>
+          <sphereGeometry args={[1, 16, 12]} />
+          <meshStandardMaterial color="#0f172a" metalness={0.5} roughness={0.3} />
+        </mesh>
+        {/* Tail boom */}
+        <mesh position={[-5.5, 0.3, 0]} scale={[6.5, 0.6, 0.6]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#e10600" roughness={0.4} />
+        </mesh>
+        {/* Main rotor */}
+        <group ref={rotorRef} position={[0, 2.4, 0]}>
+          <mesh scale={[11, 0.08, 0.45]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="#1e293b" />
+          </mesh>
+          <mesh scale={[0.45, 0.08, 11]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="#1e293b" />
+          </mesh>
+        </group>
+      </group>
+    </>
   );
 }
 
@@ -727,10 +1041,14 @@ export default function Stadium() {
   return (
     <group>
       <mesh geometry={hills}>
-        <meshStandardMaterial vertexColors roughness={1} side={THREE.DoubleSide} />
+        <meshStandardMaterial
+          vertexColors
+          roughness={1}
+          side={THREE.DoubleSide}
+        />
       </mesh>
 
-      <Blimp />
+      <AerialTraffic />
 
       {Object.entries(MATS).map(([k, m]) => (
         <Instanced key={k} items={env[k]} {...m} />
