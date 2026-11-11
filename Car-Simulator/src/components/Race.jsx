@@ -38,8 +38,8 @@ const DRS_GAP = 1.0; // seconds to the car ahead
 // ---- AI field: every AI gets a different pace each race ----
 // pace is 0 (slowest) .. 1 (fastest). Paces are shuffled across the five AI
 // cars at the start of every race, so the grid order says nothing about who is quick.
-const AI_SPEED_MIN = 60; // competitive baseline pace (~216 km/h)
-const AI_SPEED_MAX = 66; // fast drivers (~238 km/h), with a tighter field spread
+const AI_SPEED_MIN = 84; // baseline pace (~302 km/h)
+const AI_SPEED_MAX = 91; // fastest drivers (~328 km/h), close to player top speed
 const AI_GRIP_MIN = 0.98;
 const AI_GRIP_MAX = 1.06;
 const PACE_JITTER = 0.08; // keep the pack close; avoid one AI being randomly much slower
@@ -48,7 +48,7 @@ const PACE_JITTER = 0.08; // keep the pack close; avoid one AI being randomly mu
 const PASS_LOOKAHEAD = 38; // AI plans overtakes earlier
 const PASS_CLEARANCE = 4.0;
 const LAT_LIMIT = TRACK_WIDTH - 1.35;
-const RUBBER_BAND = 0.035; // subtle catch-up to prevent the AI pack stretching too far away
+const RUBBER_BAND = 0.05; // modest catch-up to keep the AI field competitive
 const RUBBER_RANGE = 190; // m of gap to the player at which rubber-banding is at full strength
 
 const AI_COLORS = ["#3671ff", "#e10600", "#ff8700", "#e10600", "#00d2be"];
@@ -481,10 +481,10 @@ function resetDriver(o, index, pace) {
     smoothedTarget: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
     brakeTargetTimer: 0,
     // Noticeable differences in acceleration and launch reaction.
-    power: 0.90 + pace * 0.12,
+    power: 1.00 + pace * 0.10,
     reaction: 0.04 + Math.random() * 0.20,
-    form: 0.99 + Math.random() * 0.02,
-    formTarget: 0.99 + Math.random() * 0.02,
+    form: 0.995 + Math.random() * 0.02,
+    formTarget: 0.995 + Math.random() * 0.02,
     formTimer: 7 + Math.random() * 8,
     mistake: 0,
     mistakeSeverity: 0,
@@ -894,7 +894,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
           if (o.speed > target) {
             o.speed = Math.max(target, o.speed - AI_BRAKE * dt);
           } else {
-            const acceleration = THREE.MathUtils.clamp(8.0 - 0.050 * o.speed, 2.2, 6.8) * o.power;
+            const acceleration = THREE.MathUtils.clamp(10.5 - 0.060 * o.speed, 4.5, 10.0) * o.power;
             o.speed = Math.min(target, o.speed + acceleration * dt);
           }
 

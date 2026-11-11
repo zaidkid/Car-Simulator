@@ -24,8 +24,9 @@ const CAR = {
 
   power: 1400,
   ersPower: 150,
-  traction: 28,
-  downforceTraction: 0.0016,
+  // Softer launch: limits low-speed acceleration without reducing top speed.
+  traction: 12,
+  downforceTraction: 0.0012,
   drag: 0.0012,
   drsDragCut: 0.28,
   rolling: 0.25,
@@ -637,7 +638,7 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     c.throttle = approach(
       c.throttle,
       throttleIn,
-      throttleIn > c.throttle ? 6 : 14,
+      throttleIn > c.throttle ? 4 : 14,
       dt,
     );
 

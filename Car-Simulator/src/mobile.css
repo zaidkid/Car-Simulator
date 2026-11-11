@@ -1,776 +1,235 @@
-/* =========================================================
-   APEX RACING — COMPLETE MOBILE CSS
-========================================================= */
 
-/* GLOBAL */
-html,
-body {
-  overscroll-behavior: none;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
+/* APEX RACING — ARCADE-STYLE MOBILE DRIVING CONTROLS
+   Append at the very end of src/mobile.css. */
 
-.app-shell {
-  height: 100dvh;
-}
-
-.rotate-notice,
-.mobile-controls,
-.tap-group {
-  display: none;
-}
-
-/* =========================================================
-   MOBILE MENU BUTTON
-========================================================= */
-
-@media (pointer: coarse) {
-  .game-menu {
-    position: fixed !important;
-    top: max(9px, env(safe-area-inset-top)) !important;
-    left: 0 !important;
-    right: 0 !important;
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    transform: none !important;
-    z-index: 125;
-    pointer-events: none;
-  }
-
-  .game-menu-toggle {
-    min-width: 100px;
-    height: 40px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    padding: 0 15px;
-    border: 1px solid rgba(255,255,255,.3);
-    border-radius: 5px;
-    background: rgba(8,12,19,.78);
-    color: white;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    pointer-events: auto;
-  }
-
-  .game-menu-panel {
-    position: fixed !important;
-    top: 50% !important;
-    left: 50% !important;
-    right: auto !important;
-    width: min(360px, calc(100vw - 28px));
-    max-height: 82dvh;
-    overflow-y: auto;
-    margin: 0 !important;
-    padding: 22px;
-    transform: translate(-50%, -50%) !important;
-    border: 1px solid rgba(255,255,255,.15);
-    border-top: 3px solid #e10600;
-    border-radius: 10px;
-    background: linear-gradient(145deg,#151c27,#080c13 75%);
-    box-shadow: 0 24px 80px rgba(0,0,0,.7);
-    pointer-events: auto;
-    z-index: 300;
-  }
-
-  .game-menu-heading {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 18px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid rgba(255,255,255,.12);
-    font-size: 25px;
-    font-weight: 900;
-    letter-spacing: 1.5px;
-  }
-
-  .game-menu-heading small {
-    color: #8793a2;
-    font-size: 9px;
-    letter-spacing: 2px;
-  }
-
-  .game-menu-action {
-    width: 100%;
-    min-height: 50px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 9px;
-    padding: 0 14px;
-    border: 1px solid rgba(255,255,255,.12);
-    border-radius: 6px;
-    background: rgba(255,255,255,.055);
-    color: white;
-    font-size: 11px;
-    font-weight: 900;
-    letter-spacing: 1px;
-    touch-action: manipulation;
-  }
-
-  .game-menu-action span {
-    width: 22px;
-    color: #ff454b;
-    font-size: 19px;
-  }
-
-  .game-menu-action.primary {
-    border-color: rgba(225,6,0,.55);
-    background: rgba(225,6,0,.14);
-  }
-
-  .game-menu-close {
-    width: 100%;
-    margin-top: 14px;
-    padding: 12px;
-    border: 0;
-    background: transparent;
-    color: #98a4b2;
-    font-size: 9px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    touch-action: manipulation;
-  }
-}
-
-/* =========================================================
-   MINIMAL PAUSE BUTTON — WHITE | |
-========================================================= */
-
-.pause-overlay {
-  position: fixed !important;
-  z-index: 200 !important;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: rgba(0,0,0,.06);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  pointer-events: auto;
-}
-
-.pause-icon-only {
-  width: 125px;
-  height: 125px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  outline: none;
-  border-radius: 0;
-  background: transparent;
-  color: rgba(255,255,255,.96);
-  font-family: Arial, sans-serif;
-  font-size: 115px;
-  font-weight: 900;
-  letter-spacing: -8px;
-  line-height: 1;
-  text-shadow: 0 3px 18px rgba(0,0,0,.45);
-  cursor: pointer;
-  touch-action: manipulation;
-  transition: transform .18s ease;
-}
-
-.pause-icon-only:hover {
-  background: transparent;
-  transform: scale(1.08);
-}
-
-.pause-icon-only:active {
-  transform: scale(.94);
-}
-
-/* =========================================================
-   PORTRAIT PHONES — ROTATE NOTICE
-========================================================= */
-
-@media (pointer: coarse) and (orientation: portrait) {
-  .rotate-notice {
-    display: flex;
-    position: fixed;
-    inset: 0;
-    z-index: 99999;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    background: #0b0c10;
-    color: white;
-    font: 700 14px sans-serif;
-    letter-spacing: .2em;
-  }
-
-  .rotate-notice span {
-    font-size: 48px;
-  }
-
-  .game-menu-toggle {
-    min-width: 90px;
-    height: 36px;
-    font-size: 9px;
-  }
-
-  .game-menu-panel {
-    width: min(340px,calc(100vw - 24px));
-    max-height: 80dvh;
-    padding: 20px;
-  }
-
-  .pause-icon-only {
-    width: 105px;
-    height: 105px;
-    font-size: 100px;
-    letter-spacing: -7px;
-  }
-}
-
-/* =========================================================
-   LANDSCAPE PHONES
-========================================================= */
-
-@media (pointer: coarse) and (orientation: landscape) {
-
-  /* ---------- MOBILE DRIVING CONTROLS ---------- */
-
+@media (max-width: 900px) and (orientation: landscape) {
   .mobile-controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
     position: fixed;
-    inset: auto 0 0 0;
-    z-index: 60;
+    z-index: 30;
+    inset: 0;
+    display: block;
+    padding: 0;
     pointer-events: none;
-
-    /* Increased spacing and side padding */
-    gap: clamp(55px, 10vw, 170px);
-    padding:
-      0
-      max(30px, env(safe-area-inset-right))
-      14px
-      max(30px, env(safe-area-inset-left));
+    touch-action: none;
   }
 
-  .control-left,
-  .control-right {
-    display: flex;
-    align-items: flex-end;
-    gap: 10px;
-    flex-shrink: 0;
-    pointer-events: auto;
+  /* Left/right steering arrows sit at the outer sides,
+     around the middle of the screen, like the reference. */
+  .mobile-controls .control-left {
+    position: absolute;
+    inset: 0;
+    display: block;
+    pointer-events: none;
   }
 
-  /* Keep steering on the far left */
-  .control-left {
-    margin-right: auto;
-  }
-
-  /* Keep accelerator and driving buttons on the far right */
-  .control-right {
-    margin-left: auto;
-  }
-
-  .touch-control {
+  .mobile-controls .control-left .steer-btn {
+    position: absolute;
+    top: 50%;
+    width: clamp(66px, 9vh, 92px);
+    height: clamp(66px, 9vh, 92px);
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 2px solid rgba(255,255,255,.38);
+    border-radius: 18px;
+    background: rgba(15,22,31,.34);
+    color: rgba(255,255,255,.94);
+    font-size: clamp(35px, 5vh, 52px);
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 2px 8px rgba(0,0,0,.7);
+    box-shadow: 0 5px 18px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.16);
+    backdrop-filter: blur(5px);
     pointer-events: auto;
     touch-action: none;
-    backdrop-filter: none;
-    width: 66px;
-    height: 66px;
-    border-radius: 50%;
-    border: 2px solid rgba(255,255,255,.35);
-    background: rgba(20,22,28,.45);
-    color: white;
-    font: 700 22px sans-serif;
+  }
+
+  .mobile-controls .control-left .steer-btn:nth-child(1) {
+    left: max(18px, env(safe-area-inset-left));
+  }
+
+  .mobile-controls .control-left .steer-btn:nth-child(2) {
+    right: max(18px, env(safe-area-inset-right));
+  }
+
+  .mobile-controls .control-left .steer-btn:active {
+    background: rgba(225,6,0,.55);
+    transform: translateY(-50%) scale(.94);
+  }
+
+  /* Accelerator and brake become broad, angled pedal pads
+     at the two lower corners. */
+  .mobile-controls .control-right {
+    position: absolute;
+    inset: 0;
+    display: block;
+    pointer-events: none;
+  }
+
+  .mobile-controls .control-right .reverse-btn,
+  .mobile-controls .control-right .accelerate-btn {
+    position: absolute;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(104px, 15vh, 150px);
+    height: clamp(70px, 11vh, 104px);
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: 2px solid rgba(255,255,255,.48);
+    border-radius: 20px 20px 30px 30px;
+    color: #fff;
+    font-size: clamp(13px, 2.1vh, 18px);
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    text-shadow: 0 2px 5px rgba(0,0,0,.45);
+    box-shadow: 0 7px 20px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.2);
+    pointer-events: auto;
+    touch-action: none;
     -webkit-tap-highlight-color: transparent;
   }
 
-  .touch-control:active {
-    background: rgba(255,255,255,.3);
+  .mobile-controls .control-right .reverse-btn {
+    left: clamp(105px, 17vw, 220px);
+    background:
+      repeating-linear-gradient(115deg, transparent 0 9px, rgba(255,255,255,.12) 9px 13px),
+      linear-gradient(145deg, rgba(205,55,62,.92), rgba(112,20,29,.92));
   }
 
-  .accelerate-btn {
-    width: 90px;
-    height: 90px;
-    font-size: 16px;
-    background: rgba(0,220,121,.35);
+  .mobile-controls .control-right .accelerate-btn {
+    right: clamp(105px, 17vw, 220px);
+    background:
+      repeating-linear-gradient(115deg, transparent 0 9px, rgba(255,255,255,.13) 9px 13px),
+      linear-gradient(145deg, rgba(0,166,94,.94), rgba(0,91,58,.94));
+    border-color: rgba(156,255,207,.75);
   }
 
-  .reverse-btn {
-    width: 64px;
-    height: 64px;
-    font-size: 12px;
-    background: rgba(255,69,69,.35);
+  .mobile-controls .control-right .reverse-btn:active,
+  .mobile-controls .control-right .accelerate-btn:active {
+    filter: brightness(1.2);
+    transform: scale(.95);
   }
 
-  .mini-btn {
-    width: 44px;
-    height: 44px;
-    font-size: 11px;
-  }
-
-  /* ---------- EXTRA TOUCH BUTTONS ---------- */
-
-  .tap-group {
-    display: flex;
-    gap: 8px;
-    position: fixed;
-    top: 128px;
-    right: max(8px,env(safe-area-inset-right));
-  }
-
-  .tap-group .touch-control {
-    width: 40px;
-    height: 40px;
-    font-size: 9px;
-  }
-
-  /* ---------- BROADCAST HUD ---------- */
-
-  .broadcast,
-  .broadcast * {
-    pointer-events: none;
-  }
-
-  .broadcast-brand,
-  .broadcast-top,
-  .broadcast-bottom,
-  .panel-heading,
-  .timing-race-info,
-  .timing-divider,
-  .timing-footer,
-  .telemetry-heading,
-  .speed-bar,
-  .telemetry-footer,
-  .leaderboard-driver small,
-  .gear-display small,
-  .gear-display div:nth-child(2) {
-    display: none;
-  }
-
-  .timing-panel,
-  .telemetry-panel {
-    backdrop-filter: none;
-  }
-
-  .timing-panel {
-    top: 6px;
-    left: max(8px,env(safe-area-inset-left));
-    width: 150px;
-  }
-
-  .leaderboard-row {
-    height: 21px;
-    gap: 5px;
-    padding: 0 6px 0 4px;
-  }
-
-  .leaderboard-position {
-    width: 16px;
-    height: 16px;
-    line-height: 16px;
-    font-size: 10px;
-  }
-
-  .leaderboard-team-color {
-    height: 14px;
-  }
-
-  .leaderboard-driver {
+  /* ERS/DRS remain available as small secondary buttons near the
+     lower centre, rather than crowding the main pedals. */
+  .mobile-controls .control-right .mini-btn {
+    position: absolute;
+    bottom: max(26px, calc(env(safe-area-inset-bottom) + 8px));
+    width: clamp(42px, 6vh, 56px);
+    height: clamp(42px, 6vh, 56px);
     min-width: 0;
-  }
-
-  .leaderboard-driver strong {
-    font-size: 11px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .leaderboard-gap {
-    font-size: 9px;
-  }
-
-  /* ---------- TELEMETRY ---------- */
-
-  .telemetry-panel {
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: 8px;
-    transform: translateX(-50%);
-    width: auto;
-    padding: 4px 14px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .speed-display {
-    margin: 0;
-  }
-
-  .speed-display strong {
-    font-size: 32px;
-  }
-
-  .gear-display {
-    margin: 0;
+    min-height: 0;
     padding: 0;
-    border: 0;
-  }
-
-  .gear-display strong {
-    font-size: 22px;
-  }
-
-  .ers-section {
-    margin: 0;
-    width: 70px;
-  }
-
-  /* ---------- COCKPIT DASH ---------- */
-
-  .cd-wrap .cd-wheel {
-    display: none !important;
-  }
-
-  .cd-wrap .cd-timing {
-    right: auto;
-    left: 50%;
-    transform: translateX(-50%);
-    top: 6px;
-    width: 190px;
-  }
-
-  .cd-wrap .cd-bottom {
-    padding: 4px 8px;
-  }
-
-  .cd-wrap .cd-pos,
-  .cd-wrap .cd-time {
-    font-size: 16px;
-  }
-
-  .cd-wrap .cd-best {
-    display: none;
-  }
-
-  .cd-wrap .cd-start {
-    top: 60px;
-    padding: 8px 12px;
-    gap: 8px;
-  }
-
-  .cd-wrap .cd-bulb {
-    width: 22px;
-    height: 22px;
-  }
-
-  /* ---------- MINIMAP ---------- */
-
-  html .mm-wrap {
-    top: 6px;
-    right: max(8px,env(safe-area-inset-right));
-    bottom: auto;
-    z-index: 30;
-    border-width: 1px;
-  }
-
-  html .mm-title {
-    display: none;
-  }
-
-  /* ---------- START COUNTDOWN ---------- */
-
-  html .sc-wrap {
-    top: 26%;
-  }
-
-  html .sc-number {
-    font-size: 76px;
-  }
-
-  html .sc-label {
-    font-size: 11px;
-    letter-spacing: 5px;
-  }
-
-  /* ---------- START MENU ---------- */
-
-  .menu-panel {
-    max-height: 94dvh;
-    overflow: auto !important;
-  }
-
-  /* ---------- RACE RESULTS ---------- */
-
-  .rr,
-  .rr-flagwrap {
-    backdrop-filter: none;
-  }
-
-  html .rr {
-    padding: 6px;
-  }
-
-  .rr-card {
-    touch-action: pan-y;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  html .rr-body {
-    padding: 10px 16px 12px;
-  }
-
-  html .rr-pos {
-    font-size: 44px;
-  }
-
-  html .rr-pos small {
-    font-size: 16px;
-  }
-
-  html .rr-time {
-    font-size: 20px;
-  }
-
-  .rr-top {
-    margin: 2px 0 8px;
-  }
-
-  .rr-pod {
-    display: none;
-  }
-
-  html .rr-cols {
-    grid-template-columns: 1.6fr 1fr;
-    gap: 14px;
-  }
-
-  .rr-table th,
-  .rr-table td {
-    padding: 4px 6px;
-  }
-
-  .rr-table th:nth-child(3),
-  .rr-table td:nth-child(3) {
-    display: none;
-  }
-
-  html .rr-stats {
-    grid-template-columns: repeat(4,1fr);
-    gap: 6px;
-    margin: 10px 0;
-  }
-
-  .rr-stat {
-    padding: 6px 8px;
-  }
-
-  .rr-stat b {
-    font-size: 15px;
-  }
-
-  .rr-note {
-    margin-bottom: 8px;
-  }
-
-  .rr-btn {
-    position: sticky;
-    bottom: 0;
-    padding: 10px;
-    font-size: 13px;
-  }
-
-  html .rr-flagband {
-    height: 32px;
-  }
-
-  html .rr-flagtext {
-    font-size: 40px;
-    margin: 12px 0;
-  }
-
-  /* ---------- CENTERED MENU ---------- */
-
-  .game-menu {
-    top: max(8px,env(safe-area-inset-top)) !important;
-    left: 0 !important;
-    right: 0 !important;
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    transform: none !important;
-  }
-
-  .game-menu-toggle {
-    min-width: 94px;
-    height: 36px;
-    font-size: 9px;
-  }
-
-  .game-menu-panel {
-    position: fixed !important;
-    top: 50% !important;
-    left: 50% !important;
-    right: auto !important;
-    width: min(360px,calc(100vw - 28px));
-    max-height: 82dvh;
-    overflow-y: auto;
-    padding: 20px;
-    margin: 0 !important;
-    transform: translate(-50%,-50%) !important;
-    z-index: 300;
-  }
-
-  .game-menu-heading {
-    font-size: 24px;
-  }
-
-  .game-menu-action {
-    min-height: 48px;
+    border: 1px solid rgba(255,255,255,.38);
+    border-radius: 50%;
+    background: rgba(15,22,31,.66);
+    color: #fff;
     font-size: 10px;
+    font-weight: 900;
+    pointer-events: auto;
+    touch-action: none;
   }
 
-  /* ---------- MINIMAL PAUSE ICON ---------- */
+  .mobile-controls .control-right .mini-btn:nth-child(1) {
+    left: 50%;
+    transform: translateX(-115%);
+  }
 
-  .pause-overlay {
-    position: fixed !important;
-    inset: 0;
-    z-index: 200 !important;
+  .mobile-controls .control-right .mini-btn:nth-child(2) {
+    left: 50%;
+    transform: translateX(15%);
+  }
+
+  .mobile-controls .tap-group {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
     display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0,0,0,.06);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    gap: 8px;
     pointer-events: auto;
   }
 
-  .pause-icon-only {
-    width: 125px;
-    height: 125px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    color: white;
-    font-family: Arial,sans-serif;
-    font-size: 115px;
-    font-weight: 900;
-    letter-spacing: -8px;
-    line-height: 1;
-    text-shadow: 0 3px 18px rgba(0,0,0,.45);
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-
-  .pause-icon-only:hover {
-    background: transparent;
-  }
-
-  .pause-icon-only:active {
-    transform: scale(.94);
-  }
-}
-
-/* =========================================================
-   SMALL LANDSCAPE PHONES
-========================================================= */
-
-@media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
-
-  .mobile-controls {
-    padding-bottom: 9px;
-    padding-left: max(20px,env(safe-area-inset-left));
-    padding-right: max(20px,env(safe-area-inset-right));
-    gap: 35px;
-  }
-
-  .control-left,
-  .control-right {
-    gap: 8px;
-  }
-
-  .touch-control {
-    width: 54px;
-    height: 54px;
-    min-width: 54px;
-    min-height: 54px;
-  }
-
-  .accelerate-btn {
-    width: 64px;
-    height: 64px;
-    min-width: 64px;
-    min-height: 64px;
-  }
-
-  .mini-btn {
+  .mobile-controls .tap-group .touch-control {
     width: 44px;
     height: 44px;
     min-width: 44px;
     min-height: 44px;
-  }
-
-  .game-menu-panel {
-    max-height: 85dvh;
-    padding: 16px;
-  }
-
-  .game-menu-action {
-    min-height: 42px;
-  }
-
-  .pause-icon-only {
-    width: 105px;
-    height: 105px;
-    font-size: 100px;
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 50%;
+    background: rgba(10,15,22,.58);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 900;
+    backdrop-filter: blur(6px);
   }
 }
 
-/* =========================================================
-   TOUCH ACCESSIBILITY
-========================================================= */
-
-@media (pointer: coarse) {
-  button {
-    -webkit-tap-highlight-color: transparent;
+@media (max-width: 700px) and (orientation: landscape) {
+  .mobile-controls .control-left .steer-btn {
+    width: 58px;
+    height: 58px;
+    font-size: 34px;
   }
 
-  .game-menu-toggle,
-  .game-menu-action,
-  .game-menu-close,
-  .pause-icon-only {
-    touch-action: manipulation;
+  .mobile-controls .control-left .steer-btn:nth-child(1) {
+    left: max(10px, env(safe-area-inset-left));
+  }
+
+  .mobile-controls .control-left .steer-btn:nth-child(2) {
+    right: max(10px, env(safe-area-inset-right));
+  }
+
+  .mobile-controls .control-right .reverse-btn,
+  .mobile-controls .control-right .accelerate-btn {
+    width: 88px;
+    height: 62px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    font-size: 12px;
+    border-radius: 15px 15px 22px 22px;
+  }
+
+  .mobile-controls .control-right .reverse-btn {
+    left: clamp(72px, 13vw, 115px);
+  }
+
+  .mobile-controls .control-right .accelerate-btn {
+    right: clamp(72px, 13vw, 115px);
+  }
+
+  .mobile-controls .control-right .mini-btn {
+    width: 36px;
+    height: 36px;
+    bottom: max(18px, calc(env(safe-area-inset-bottom) + 5px));
+    font-size: 8px;
+  }
+
+  .mobile-controls .tap-group {
+    top: 8px;
+    right: max(10px, env(safe-area-inset-right));
+  }
+
+  .mobile-controls .tap-group .touch-control {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 8px;
   }
 }
 
-/* =========================================================
-   REDUCED MOTION
-========================================================= */
+@media (max-height: 420px) and (orientation: landscape) {
+  .mobile-controls .control-right .reverse-btn,
+  .mobile-controls .control-right .accelerate-btn {
+    height: 54px;
+    bottom: max(7px, env(safe-area-inset-bottom));
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
+  .mobile-controls .control-right .mini-btn {
+    width: 32px;
+    height: 32px;
+    bottom: max(15px, calc(env(safe-area-inset-bottom) + 4px));
   }
 }
