@@ -27,6 +27,20 @@ const PHONE =
   typeof window !== "undefined" &&
   window.matchMedia("(pointer: coarse)").matches;
 
+// One adaptive-quality controller lives in App.jsx.
+// Do not mount a separate <Quality /> component as well.
+const DEVICE_DPR =
+  typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+
+const MIN_DPR = PHONE ? 0.65 : 0.8;
+const MAX_DPR = PHONE
+  ? Math.min(DEVICE_DPR, 1.2)
+  : Math.min(DEVICE_DPR, 1.6);
+
+const INITIAL_DPR = PHONE
+  ? Math.min(Math.max(DEVICE_DPR * 0.75, 0.8), MAX_DPR)
+  : Math.min(Math.max(DEVICE_DPR * 0.9, 1.0), MAX_DPR);
+
 const EMPTY_CONTROLS = () => ({
   forward: false,
   backward: false,
@@ -497,9 +511,8 @@ export default function App() {
   const [sceneReady, setSceneReady] = useState(false);
   const [paused, setPaused] = useState(false);
 
-  const [dpr, setDpr] = useState(
-    PHONE ? 0.85 : 1.1
-  );
+  // Start with a balanced resolution, then let PerformanceMonitor adapt it.
+  const [dpr, setDpr] = useState(INITIAL_DPR);
 
   // Keyboard controls
   useEffect(() => {
@@ -603,19 +616,23 @@ export default function App() {
         }}
       >
         <PerformanceMonitor
+          ms={250}
+          iterations={6}
+          threshold={0.75}
+          flipflops={4}
           onDecline={() => {
-            setDpr((d) =>
-              Math.max(PHONE ? 0.65 : 0.75, d - 0.15)
+            setDpr((current) =>
+              Math.max(MIN_DPR, Number((current - 0.12).toFixed(2)))
             );
           }}
           onIncline={() => {
-            setDpr((d) =>
-              Math.min(PHONE ? 1.0 : 1.25, d + 0.1)
+            setDpr((current) =>
+              Math.min(MAX_DPR, Number((current + 0.08).toFixed(2)))
             );
           }}
-          onFallback={() =>
-            setDpr(PHONE ? 0.7 : 0.8)
-          }
+          onFallback={() => {
+            setDpr(PHONE ? 0.65 : 0.8);
+          }}
         />
 
         <color attach="background" args={["#cfdcea"]} />
