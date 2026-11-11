@@ -19,22 +19,31 @@ import CockpitDash from "./components/Cockpitdash";
 import RaceResults from "./components/Raceresults";
 
 import { game, useGame } from "./components/gameStore";
-import "./mobile.css"; // must stay last so it overrides component CSS
+import "./mobile.css";
 
-// Start fetching the main car asset as soon as this module is loaded.
 useGLTF.preload("/models/Red_bull_car.glb");
 
 const PHONE = matchMedia("(pointer: coarse)").matches;
 
-function GameLoop() {
+const EMPTY_CONTROLS = () => ({
+  forward: false,
+  backward: false,
+  left: false,
+  right: false,
+  ers: false,
+  drs: false,
+});
+
+function GameLoop({ paused }) {
   useFrame((_, delta) => {
-    game.tick(Math.min(delta, 0.1));
+    if (!paused) {
+      game.tick(Math.min(delta, 0.1));
+    }
   });
 
   return null;
 }
 
-// Mounts only after everything inside the shared Suspense boundary has loaded.
 function SceneReady({ onReady }) {
   useEffect(() => {
     onReady();
@@ -43,9 +52,10 @@ function SceneReady({ onReady }) {
   return null;
 }
 
-// ---------- Mobile touch controls ----------
+// --------------------------------------------------
+// MOBILE CONTROLS
+// --------------------------------------------------
 
-// Hold-to-press button (steer, gas, brake, ERS, DRS)
 function ControlButton({ label, field, mobileRef, className = "" }) {
   const set = (on) => {
     mobileRef.current[field] = on;
@@ -59,6 +69,7 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
       onPointerDown={(e) => {
         e.preventDefault();
         set(true);
+
         try {
           e.currentTarget.setPointerCapture(e.pointerId);
         } catch {}
@@ -76,7 +87,6 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
   );
 }
 
-// One-shot key press (camera / reset), handled by FollowCamera and Car
 function TapButton({ label, keyName }) {
   return (
     <button
@@ -84,7 +94,14 @@ function TapButton({ label, keyName }) {
       className="touch-control"
       onPointerDown={(e) => {
         e.preventDefault();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: keyName }));
+
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: keyName,
+            code: keyName === "r" ? "KeyR" : "KeyC",
+            bubbles: true,
+          })
+        );
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -93,12 +110,12 @@ function TapButton({ label, keyName }) {
   );
 }
 
-// [label, field, class]
 const TOUCH = {
   left: [
     ["◀", "left", "steer-btn"],
     ["▶", "right", "steer-btn"],
   ],
+
   right: [
     ["ERS", "ers", "mini-btn"],
     ["DRS", "drs", "mini-btn"],
@@ -107,7 +124,6 @@ const TOUCH = {
   ],
 };
 
-// Fullscreen + landscape lock (Android Chrome; iOS ignores it)
 const enterLandscape = async () => {
   try {
     await document.documentElement.requestFullscreen?.();
@@ -115,7 +131,9 @@ const enterLandscape = async () => {
   } catch {}
 };
 
-// ---------- Start menu ----------
+// --------------------------------------------------
+// START MENU
+// --------------------------------------------------
 
 function RaceMenu({ sceneReady }) {
   const { phase } = useGame();
@@ -133,6 +151,7 @@ function RaceMenu({ sceneReady }) {
     };
 
     window.addEventListener("keydown", handleKeyDown);
+
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [sceneReady]);
 
@@ -141,7 +160,9 @@ function RaceMenu({ sceneReady }) {
   return (
     <div className="menu-overlay">
       <section className="menu-panel">
-        <div className="menu-kicker">GRAND PRIX · RACE WEEKEND</div>
+        <div className="menu-kicker">
+          GRAND PRIX · RACE WEEKEND
+        </div>
 
         <h1>
           APEX <span>RACING</span>
@@ -167,22 +188,148 @@ function RaceMenu({ sceneReady }) {
         </button>
 
         <div className="menu-footnote">
-          {sceneReady ? "PRESS ENTER TO START" : "LOADING TRACK, CARS & GRAPHICS"}
+          {sceneReady
+            ? "PRESS ENTER TO START"
+            : "LOADING TRACK, CARS & GRAPHICS"}
         </div>
       </section>
     </div>
   );
 }
 
+// --------------------------------------------------
+// PAUSE / GAME MENU
+// --------------------------------------------------
+
+function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
+  const [open, setOpen] = useState(false);
+  const { phase } = useGame();
+
+  useEffect(() => {
+    if (paused) setOpen(false);
+  }, [paused]);
+
+  if (phase === "ready") return null;
+
+  const closeMenu = () => setOpen(false);
+
+  return (
+    <>
+      {!paused && (
+        <div className="game-menu">
+          <button
+            type="button"
+            className={`game-menu-toggle ${open ? "is-open" : ""}`}
+            onClick={() => setOpen((value) => !value)}
+            aria-label={open ? "Close game menu" : "Open game menu"}
+            aria-expanded={open}
+          >
+            <span className="menu-toggle-lines" aria-hidden="true">
+              <i /><i />
+            </span>
+            <span>MENU</span>
+          </button>
+
+          {open && (
+            <>
+              <button
+                type="button"
+                className="game-menu-backdrop"
+                aria-label="Close menu"
+                onClick={closeMenu}
+              />
+              <section className="game-menu-panel" aria-label="Race menu">
+                <div className="game-menu-heading">
+                  <span>APEX <b>RACING</b></span>
+                  <small>RACE CONTROL</small>
+                </div>
+
+                {phase === "playing" && (
+                  <button
+                    type="button"
+                    className="game-menu-action primary"
+                    onClick={() => {
+                      closeMenu();
+                      setPaused(true);
+                    }}
+                  >
+                    <span className="action-pause-icon">| |</span>
+                    PAUSE RACE
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="game-menu-action"
+                  onClick={() => {
+                    closeMenu();
+                    setPaused(false);
+                    onResetCar();
+                  }}
+                >
+                  <span>↺</span>
+                  RESET CAR
+                </button>
+
+                <button
+                  type="button"
+                  className="game-menu-action restart"
+                  onClick={() => {
+                    closeMenu();
+                    setPaused(false);
+                    onRestart();
+                  }}
+                >
+                  <span>⟲</span>
+                  RESTART RACE
+                </button>
+
+                <button type="button" className="game-menu-close" onClick={closeMenu}>
+                  BACK TO RACE
+                </button>
+              </section>
+            </>
+          )}
+        </div>
+      )}
+
+      {paused && (
+        <div className="pause-overlay">
+          <button
+            type="button"
+            className="pause-icon-only"
+            onClick={() => setPaused(false)}
+            aria-label="Resume race"
+            title="Resume race"
+          >
+            Ⅱ
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+// --------------------------------------------------
+// LOADING SCREEN
+// --------------------------------------------------
+
 function SceneLoading({ visible }) {
   if (!visible) return null;
 
   return (
-    <div className="scene-loading" role="status" aria-live="polite">
+    <div className="scene-loading">
       <div className="scene-loading-card">
-        <div className="scene-loading-mark">APEX <span>RACING</span></div>
+        <div className="scene-loading-mark">
+          APEX <span>RACING</span>
+        </div>
+
         <div className="scene-loading-spinner" />
-        <div className="scene-loading-title">PREPARING THE CIRCUIT</div>
+
+        <div className="scene-loading-title">
+          PREPARING THE CIRCUIT
+        </div>
+
         <div className="scene-loading-subtitle">
           Loading cars, track and race graphics...
         </div>
@@ -191,26 +338,23 @@ function SceneLoading({ visible }) {
   );
 }
 
-const EMPTY_CONTROLS = () => ({
-  forward: false,
-  backward: false,
-  left: false,
-  right: false,
-  ers: false,
-  drs: false,
-});
+// --------------------------------------------------
+// MAIN APP
+// --------------------------------------------------
 
 export default function App() {
   const carRef = useRef(null);
   const speedRef = useRef(null);
   const raceRef = useRef(null);
-  const mobileRef = useRef(EMPTY_CONTROLS());
-  const [sceneReady, setSceneReady] = useState(false);
 
-  // Render resolution: starts sharp, drops only if the frame rate falls
+  const mobileRef = useRef(EMPTY_CONTROLS());
+
+  const [sceneReady, setSceneReady] = useState(false);
+  const [paused, setPaused] = useState(false);
+
   const [dpr, setDpr] = useState(PHONE ? 1.75 : 1.25);
 
-  // CENTRAL KEYBOARD INPUT
+  // Keyboard controls
   useEffect(() => {
     const keyMap = {
       KeyW: "forward",
@@ -225,6 +369,7 @@ export default function App() {
 
     const handleKeyDown = (event) => {
       const field = keyMap[event.code];
+
       if (!field) return;
 
       event.preventDefault();
@@ -233,6 +378,7 @@ export default function App() {
 
     const handleKeyUp = (event) => {
       const field = keyMap[event.code];
+
       if (!field) return;
 
       event.preventDefault();
@@ -254,8 +400,47 @@ export default function App() {
     };
   }, []);
 
+  // Prevent held controls from remaining active while paused.
+  useEffect(() => {
+    if (paused) {
+      mobileRef.current = EMPTY_CONTROLS();
+    }
+  }, [paused]);
+
+  // Restart by transitioning out of playing before starting again.
+  const restartRace = () => {
+    setPaused(false);
+    game.end();
+
+    requestAnimationFrame(() => {
+      game.start();
+    });
+  };
+
+  // Use the existing R-key reset functionality in Car.jsx.
+  const resetCar = () => {
+    mobileRef.current = EMPTY_CONTROLS();
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "r",
+        code: "KeyR",
+        bubbles: true,
+      })
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent("keyup", {
+        key: "r",
+        code: "KeyR",
+        bubbles: true,
+      })
+    );
+  };
+
   return (
     <main className="app-shell">
+
       <Canvas
         shadows
         dpr={dpr}
@@ -272,49 +457,95 @@ export default function App() {
           far: 2500,
         }}
       >
+
         <PerformanceMonitor
-          onDecline={() => setDpr((d) => Math.max(1, d - 0.25))}
-          onIncline={() => setDpr((d) => Math.min(PHONE ? 2 : 1.5, d + 0.25))}
+          onDecline={() => {
+            setDpr((d) => Math.max(1, d - 0.25));
+          }}
+          onIncline={() => {
+            setDpr((d) => Math.min(PHONE ? 2 : 1.5, d + 0.25));
+          }}
         />
 
         <color attach="background" args={["#cfdcea"]} />
-        <GameLoop />
+
+        <GameLoop paused={paused} />
 
         <Suspense fallback={null}>
+
           <Atmosphere />
           <Stadium />
 
-          <Physics gravity={[0, -25, 0]} timeStep="vary">
+          <Physics
+            gravity={[0, -25, 0]}
+            timeStep="vary"
+            paused={paused}
+          >
             <Car
               carRef={carRef}
               mobileRef={mobileRef}
               hudRef={speedRef}
+              paused={paused}
             />
+
             <Ground />
-            <Race carRef={carRef} hudRef={raceRef} />
+
+            <Race
+              carRef={carRef}
+              hudRef={raceRef}
+              paused={paused}
+            />
           </Physics>
 
           <FollowCamera targetRef={carRef} />
+
           <Effects />
 
-          <SceneReady onReady={() => setSceneReady(true)} />
+          <SceneReady
+            onReady={() => setSceneReady(true)}
+          />
+
         </Suspense>
       </Canvas>
 
       <SceneLoading visible={!sceneReady} />
 
       {/* RACING HUD */}
-      <BroadcastHUD speedRef={speedRef} raceRef={raceRef} />
+
+      <BroadcastHUD
+        speedRef={speedRef}
+        raceRef={raceRef}
+      />
+
       <CockpitDash />
+
       <MiniMap size={PHONE ? 110 : 220} />
+
       <StartCountdown />
 
-      {/* MENUS */}
-      <RaceMenu sceneReady={sceneReady} />
-      <RaceResults onRestart={() => game.start()} />
+      {/* START MENU */}
 
-      {/* MOBILE TOUCH CONTROLS */}
+      <RaceMenu sceneReady={sceneReady} />
+
+      {/* PAUSE / RESTART MENU */}
+
+      <GameMenu
+        paused={paused}
+        setPaused={setPaused}
+        onRestart={restartRace}
+        onResetCar={resetCar}
+      />
+
+      {/* RESULTS */}
+
+      <RaceResults
+        onRestart={restartRace}
+      />
+
+      {/* MOBILE CONTROLS */}
+
       <div className="mobile-controls">
+
         {Object.entries(TOUCH).map(([side, buttons]) => (
           <div key={side} className={`control-${side}`}>
             {buttons.map(([label, field, cls]) => (
@@ -333,11 +564,14 @@ export default function App() {
           <TapButton label="CAM" keyName="c" />
           <TapButton label="RESET" keyName="r" />
         </div>
+
       </div>
 
       <div className="rotate-notice">
-        <span>⟳</span>ROTATE YOUR PHONE TO LANDSCAPE
+        <span>⟳</span>
+        ROTATE YOUR PHONE TO LANDSCAPE
       </div>
+
     </main>
   );
 }

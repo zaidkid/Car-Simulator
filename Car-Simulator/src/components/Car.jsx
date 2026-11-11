@@ -143,7 +143,7 @@ function SparkBurst({ position, onDone }) {
 // MAIN CAR COMPONENT
 // ==========================================
 
-export default function Car({ carRef, mobileRef, hudRef }) {
+export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   const gltf = useGLTF(F1_CAR_URL);
   const modelRef = useRef();
 
@@ -281,6 +281,37 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     // Synchronize with Race.jsx.
     track.resetToken = (track.resetToken || 0) + 1;
   }, [carRef]);
+
+  // ==========================================
+  // PAUSE SUPPORT
+  // ==========================================
+
+  useEffect(() => {
+    if (!paused) return;
+
+    // Clear held inputs so the car cannot accelerate or steer on resume.
+    keys.current = {};
+    if (mobileRef?.current) {
+      Object.keys(mobileRef.current).forEach((key) => {
+        mobileRef.current[key] = false;
+      });
+    }
+
+    Object.assign(ctl.current, {
+      throttle: 0,
+      brake: 0,
+      steer: 0,
+      skidGain: 0,
+    });
+
+    if (engine.current) {
+      engine.current.pause();
+    }
+
+    if (skid.current) {
+      skid.current.gain.gain.value = 0;
+    }
+  }, [paused, mobileRef]);
 
   // ==========================================
   // KEYBOARD INPUT
@@ -501,6 +532,10 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   // ==========================================
 
   useFrame((state, delta) => {
+    // Physics is paused by the parent Physics component. Stop the
+    // car controller and audio updates as well until the race resumes.
+    if (paused) return;
+
     const body = carRef.current;
 
     if (!body) return;

@@ -159,19 +159,9 @@ const drsZone = new Array(SAMPLES).fill(false);
 // TRACK GEOMETRY
 // ==========================================
 
-// Arc-length coordinates let asphalt grain and kerb paint follow the road
-// continuously instead of restarting at every geometry segment.
-const trackDistance = new Array(SAMPLES).fill(0);
-for (let i = 1; i < SAMPLES; i++) {
-  trackDistance[i] = trackDistance[i - 1] + points[i].distanceTo(points[i - 1]);
-}
-const totalSampledLength =
-  trackDistance[SAMPLES - 1] + points[SAMPLES - 1].distanceTo(points[0]);
-
 function makeStrip(inner, outer, y, colorAt) {
   const positions = [];
   const colors = [];
-  const uvs = [];
 
   for (let i = 0; i < SAMPLES; i++) {
     const next = (i + 1) % SAMPLES;
@@ -181,142 +171,55 @@ function makeStrip(inner, outer, y, colorAt) {
       [i, inner], [i, outer], [next, outer],
       [i, inner], [next, outer], [next, inner],
     ]) {
-      const distance = index === 0 && i === SAMPLES - 1
-        ? totalSampledLength
-        : trackDistance[index];
-
       positions.push(
         points[index].x + normals[index].x * offset,
         y,
         points[index].z + normals[index].z * offset
       );
       colors.push(color.r, color.g, color.b);
-      // One texture repeat covers roughly 8 metres of track.
-      uvs.push(distance / 8, offset / 8);
     }
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.computeVertexNormals();
 
   return geometry;
 }
 
-const both = (a, b, y, colorAt) => [
-  makeStrip(a, b, y, colorAt),
-  makeStrip(-b, -a, y, colorAt),
-];
+const both = (a, b, y, colorAt) => [makeStrip(a, b, y, colorAt), makeStrip(-b, -a, y, colorAt)];
 
 const white = new THREE.Color("#f4f4f4");
 const red = new THREE.Color("#d71920");
 const concrete = new THREE.Color("#3a3d44");
-const runoffColor = new THREE.Color("#315b35");
-const greenRunoff = new THREE.Color("#477f43");
+const runoffColor = new THREE.Color("#55585e");
 const gravelColor = new THREE.Color("#b9a67f");
 
-// Procedural asphalt: fine aggregate, subtle patches and tiny pale stones.
-// It is generated once and tiled in world-like metres across the circuit.
-function makeAsphaltTexture() {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d");
-
-  let seed = 734921;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-
-  ctx.fillStyle = "#34363a";
-  ctx.fillRect(0, 0, size, size);
-
-  // Broad, low-contrast asphalt variation.
-  for (let i = 0; i < 95; i++) {
-    const x = random() * size;
-    const y = random() * size;
-    const radius = 12 + random() * 54;
-    const shade = random() > 0.5 ? 58 : 25;
-    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
-    gradient.addColorStop(0, `rgba(${shade},${shade},${shade},0.16)`);
-    gradient.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
-  }
-
-  // Fine aggregate grain.
-  for (let i = 0; i < 26000; i++) {
-    const shade = 35 + Math.floor(random() * 52);
-    const alpha = 0.12 + random() * 0.22;
-    ctx.fillStyle = `rgba(${shade},${shade},${shade},${alpha})`;
-    const w = 0.5 + random() * 1.7;
-    const h = 0.5 + random() * 1.5;
-    ctx.fillRect(random() * size, random() * size, w, h);
-  }
-
-  // Sparse aggregate flecks catch light without looking like obvious noise.
-  for (let i = 0; i < 1800; i++) {
-    const shade = 95 + Math.floor(random() * 65);
-    ctx.fillStyle = `rgba(${shade},${shade},${shade},${0.08 + random() * 0.13})`;
-    ctx.fillRect(random() * size, random() * size, 1 + random() * 1.5, 1);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
-  texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  return texture;
-}
-
-const asphaltTexture = makeAsphaltTexture();
-
-// Kerbs alternate in approximately 3 m blocks, and appear only where the
-// circuit is turning sharply enough for an apex kerb.
-const kerbColor = (i) => {
-  if (Math.abs(curvature[i]) <= 0.0028) return concrete;
-  return Math.floor(trackDistance[i] / 3) % 2 === 0 ? red : white;
-};
-
-const rubberDark = new THREE.Color("#17191d");
-const rubberLight = new THREE.Color("#24262a");
-const rubberColor = (i) =>
-  Math.floor(trackDistance[i] / 17) % 2 === 0 ? rubberDark : rubberLight;
-
-// Proper dark racing asphalt with subtle lateral tone variation.
-// The asphalt remains the full 20 m-wide driving surface; grass starts
-// immediately outside the white boundary line (Ground.jsx supplies the grass).
-const asphaltBands = [
+// Asphalt in lateral bands: the middle is darker (rubbered-in racing line)
+const BANDS = [
   [-TRACK_WIDTH, -6, "#303338"],
-  [-6, -2, "#292c31"],
-  [-2, 2, "#24272b"],
-  [2, 6, "#292c31"],
+  [-6, -2, "#2a2c31"],
+  [-2, 2, "#232529"],
+  [2, 6, "#2a2c31"],
   [6, TRACK_WIDTH, "#303338"],
 ].map(([a, b, hex]) => {
-  const base = new THREE.Color(hex);
-  const alternate = base.clone().offsetHSL(0, 0, 0.012);
-  return makeStrip(a, b, 0.055, (i) =>
-    Math.floor(trackDistance[i] / 22) % 2 === 0 ? base : alternate
-  );
+  const dark = new THREE.Color(hex);
+  const light = dark.clone().offsetHSL(0, 0, 0.012);
+  return [a, b, dark, light];
 });
 
-// Reuse the kerbColor function declared with the track materials above.
+// Kerbs only in corners; flat concrete on straights
+const kerbColor = (i) =>
+  Math.abs(curvature[i]) > 0.0028 ? (i % 2 ? red : white) : concrete;
 
+// Drawn bottom to top (later layers get a stronger polygon offset)
 const trackMeshes = [
-  ...asphaltBands,
-  ...both(TRACK_WIDTH, TRACK_WIDTH + KERB_WIDTH, 0.060, kerbColor),
-  ...both(TRACK_WIDTH - 0.55, TRACK_WIDTH - 0.30, 0.063, () => white),
-];
-
-// Subtle rubbered-in racing line. Kept as a separate translucent overlay so
-// the asphalt texture remains visible underneath.
-const rubberLineMeshes = [
-  makeStrip(-3.2, 3.2, 0.058, rubberColor),
+  ...both(RUNOFF_END, GRAVEL_END, 0.045, () => gravelColor),
+  ...both(TRACK_WIDTH + KERB_WIDTH, RUNOFF_END, 0.05, () => runoffColor),
+  ...BANDS.map(([a, b, dark, light]) => makeStrip(a, b, 0.055, (i) => (i % 60 < 30 ? dark : light))),
+  ...both(TRACK_WIDTH, TRACK_WIDTH + KERB_WIDTH, 0.06, kerbColor),
+  ...both(TRACK_WIDTH - 0.55, TRACK_WIDTH - 0.3, 0.062, () => white), // track-limit lines
 ];
 
 // ==========================================
@@ -336,6 +239,7 @@ const at = (i, offset, y) =>
 
 const barrierItems = [];
 const tyreItems = [];
+const drsItems = [];
 
 for (let i = 0; i < SAMPLES; i += BARRIER_STEP) {
   const yaw = Math.atan2(tangents[i].x, tangents[i].z);
@@ -361,7 +265,18 @@ for (let i = 0; i < SAMPLES; i++) {
   }
 }
 
-// DRS zones remain active in the race logic; physical-looking green boards are intentionally omitted.
+// Green DRS boards at the start of each zone
+drsZone.forEach((zone, i) => {
+  if (!zone || drsZone[(i - 1 + SAMPLES) % SAMPLES]) return;
+
+  for (const side of [1, -1]) {
+    drsItems.push({
+      position: at(i, side * (TRACK_WIDTH + KERB_WIDTH + 1.5), 1.5),
+      yaw: Math.atan2(tangents[i].x, tangents[i].z),
+      color: "#00c853",
+    });
+  }
+});
 
 function InstancedItems({ items, children }) {
   const ref = useRef();
@@ -631,7 +546,7 @@ function buildFinalClassification({ state, opponents }) {
 // RACE COMPONENT
 // ==========================================
 
-export default function Race({ carRef, hudRef }) {
+export default function Race({ carRef, hudRef, paused = false }) {
   const { scene } = useGLTF("/models/Red_bull_car.glb");
   const lightMats = useRef([]);
 
@@ -732,6 +647,9 @@ export default function Race({ carRef, hudRef }) {
   // ==========================================
 
   useFrame((_, delta) => {
+    // Freeze race simulation updates while the pause menu is open.
+    if (paused) return;
+
     const body = carRef.current;
     if (!body) return;
 
@@ -1257,29 +1175,11 @@ export default function Race({ carRef, hudRef }) {
         <mesh key={index} geometry={geometry} receiveShadow>
           <meshStandardMaterial
             vertexColors
-            map={index < 5 ? asphaltTexture : null}
             side={THREE.DoubleSide}
-            roughness={index < 5 ? 0.88 : 0.9}
-            metalness={index < 5 ? 0.02 : 0}
+            roughness={0.92}
             polygonOffset
             polygonOffsetFactor={-index - 1}
             polygonOffsetUnits={-index - 1}
-          />
-        </mesh>
-      ))}
-
-      {rubberLineMeshes.map((geometry, index) => (
-        <mesh key={`rubber-${index}`} geometry={geometry} receiveShadow>
-          <meshStandardMaterial
-            vertexColors
-            side={THREE.DoubleSide}
-            roughness={0.82}
-            transparent
-            opacity={0.34}
-            depthWrite={false}
-            polygonOffset
-            polygonOffsetFactor={-14}
-            polygonOffsetUnits={-14}
           />
         </mesh>
       ))}
@@ -1293,6 +1193,10 @@ export default function Race({ carRef, hudRef }) {
 
       <InstancedItems items={tyreItems}>
         <cylinderGeometry args={[0.5, 0.5, 0.5, 14]} />
+      </InstancedItems>
+
+      <InstancedItems items={drsItems}>
+        <boxGeometry args={[0.3, 3, 5]} />
       </InstancedItems>
 
       {opponents.map((o, index) => {

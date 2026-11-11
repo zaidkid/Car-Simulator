@@ -1,497 +1,1883 @@
 @import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap");
 
+
+
 :root {
+
   font-family: "Inter", sans-serif;
+
   color: #fff;
+
   background: #080b10;
+
   font-synthesis: none;
+
   text-rendering: optimizeLegibility;
+
+  -webkit-font-smoothing: antialiased;
+
+  -moz-osx-font-smoothing: grayscale;
+
 }
+
+
 
 * {
+
   box-sizing: border-box;
+
 }
+
+
 
 html,
+
 body,
+
 #root {
+
   width: 100%;
+
   height: 100%;
+
+  min-height: 100%;
+
   margin: 0;
+
   overflow: hidden;
+
 }
+
+
 
 body {
+
   background: #080b10;
+
   user-select: none;
+
   -webkit-user-select: none;
+
   -webkit-touch-callout: none;
+
 }
+
+
 
 button {
+
   font: inherit;
+
   cursor: pointer;
+
   -webkit-tap-highlight-color: transparent;
+
 }
+
+
+
+button:focus-visible {
+
+  outline: 2px solid #fff;
+
+  outline-offset: 3px;
+
+}
+
+
 
 .app-shell {
+
   position: relative;
+
   width: 100%;
+
   height: 100%;
+
+  min-height: 100dvh;
+
   overflow: hidden;
+
+  isolation: isolate;
+
   background: #9aa6ad;
+
   touch-action: none;
+
 }
 
-canvas {
+
+
+.app-shell canvas {
+
   display: block;
+
   width: 100%;
+
   height: 100%;
+
   outline: none;
+
 }
 
-/* =========================
+
+
+/* =====================================
+
    RACING HUD
-========================= */
+
+===================================== */
+
+
 
 .race-hud {
+
   position: fixed;
+
   z-index: 5;
+
   top: 0;
+
   left: 0;
+
   right: 0;
+
   min-height: 76px;
+
   display: grid;
+
   grid-template-columns: 1fr auto 1fr;
+
   align-items: center;
+
   gap: 24px;
+
   padding: 12px 24px;
-  color: white;
-  background: linear-gradient(
-    180deg,
-    rgba(5, 8, 13, 0.78),
-    rgba(5, 8, 13, 0)
-  );
+
+  color: #fff;
+
+  background: linear-gradient(180deg, rgba(5, 8, 13, .82), transparent);
+
   pointer-events: none;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .7);
+
 }
+
+
 
 .race-brand {
+
   display: flex;
+
   align-items: center;
+
   gap: 10px;
+
   font-family: "Barlow Condensed", sans-serif;
+
   font-size: 22px;
+
   font-weight: 800;
+
   letter-spacing: 2px;
+
 }
+
+
 
 .race-brand b {
+
   color: #ff343b;
+
 }
+
+
 
 .brand-mark {
+
   width: 5px;
+
   height: 27px;
+
   background: #e10600;
+
   transform: skew(-15deg);
+
 }
+
+
 
 .hud-center {
+
   display: flex;
+
   gap: 10px;
+
 }
+
+
 
 .hud-stat {
+
   min-width: 82px;
+
   padding: 7px 13px;
+
   display: flex;
+
   flex-direction: column;
+
   gap: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+
+  border: 1px solid rgba(255,255,255,.16);
+
   border-radius: 8px;
-  background: rgba(10, 13, 19, 0.62);
+
+  background: rgba(10,13,19,.62);
+
   backdrop-filter: blur(10px);
+
 }
+
+
 
 .stat-label {
+
   color: #aeb8c5;
+
   font-size: 9px;
+
   font-weight: 800;
+
   letter-spacing: 1.5px;
+
 }
+
+
 
 .hud-stat strong {
+
   font-family: "Barlow Condensed", sans-serif;
+
   font-size: 19px;
+
   line-height: 1;
+
 }
+
+
 
 .speed-panel {
+
   display: flex;
+
   flex-direction: column;
+
   align-items: flex-end;
+
   gap: 3px;
+
 }
+
+
 
 .speed-panel strong {
+
   font-family: "Barlow Condensed", sans-serif;
+
   font-size: 35px;
+
   font-weight: 900;
+
   line-height: 1;
+
 }
+
+
 
 .speed-panel span {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+
   color: #e1e5e9;
+
+  font-size: 9px;
+
+  font-weight: 700;
+
 }
+
+
 
 .race-position {
+
   position: fixed;
+
   z-index: 5;
+
   top: 88px;
+
   left: 22px;
+
   padding: 10px 15px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+
+  border: 1px solid rgba(255,255,255,.16);
+
   border-radius: 7px;
-  background: rgba(8, 11, 16, 0.72);
+
+  background: rgba(8,11,16,.72);
+
   color: #fff;
+
   font-family: "Barlow Condensed", sans-serif;
+
   font-size: 17px;
+
   font-weight: 800;
-  letter-spacing: 0.7px;
+
   backdrop-filter: blur(10px);
+
   pointer-events: none;
+
 }
 
-/* =========================
+
+
+/* =====================================
+
    START MENU
-========================= */
+
+===================================== */
+
+
 
 .menu-overlay {
+
   position: fixed;
-  z-index: 10;
+
+  z-index: 100;
+
   inset: 0;
+
   display: flex;
+
   align-items: center;
+
   justify-content: center;
+
   padding: 20px;
-  background: rgba(3, 6, 10, 0.42);
-  backdrop-filter: blur(5px);
+
+  background: rgba(3,6,10,.48);
+
+  backdrop-filter: blur(6px);
+
+  pointer-events: auto;
+
 }
+
+
 
 .menu-panel {
-  width: min(480px, 94vw);
+
+  position: relative;
+
+  z-index: 101;
+
+  width: min(500px,92vw);
+
   padding: 42px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+
+  border: 1px solid rgba(255,255,255,.14);
+
   border-top: 4px solid #e10600;
+
   border-radius: 12px;
-  background: linear-gradient(145deg, #171d27, #090d14);
-  box-shadow: 0 28px 100px rgba(0, 0, 0, 0.58);
-  text-align: left;
+
+  background: linear-gradient(145deg,#171d27,#090d14);
+
+  box-shadow: 0 28px 100px rgba(0,0,0,.58);
+
 }
+
+
 
 .menu-kicker {
+
   margin-bottom: 12px;
+
   color: #ff555a;
+
   font-size: 10px;
+
   font-weight: 800;
+
   letter-spacing: 3px;
+
 }
+
+
 
 .menu-panel h1 {
+
   margin: 0;
-  font-family: "Barlow Condensed", sans-serif;
-  font-size: clamp(48px, 9vw, 76px);
+
+  font-family: "Barlow Condensed",sans-serif;
+
+  font-size: clamp(48px,9vw,76px);
+
   font-weight: 900;
-  line-height: 0.9;
-  letter-spacing: -1px;
+
+  line-height: .9;
+
 }
+
+
 
 .menu-panel h1 span {
+
   color: #e10600;
+
 }
+
+
 
 .menu-panel p {
+
   margin: 20px 0 26px;
+
   color: #b8c0ca;
+
   font-size: 13px;
+
   line-height: 1.7;
+
 }
+
+
 
 .start-button {
+
   width: 100%;
+
   min-height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+
+  margin-top: 4px;
+
   padding: 0 19px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
   border: 0;
+
   border-radius: 6px;
+
   background: #e10600;
-  color: white;
+
+  color: #fff;
+
   font-size: 12px;
+
   font-weight: 900;
+
   letter-spacing: 1.5px;
-  transition: background 0.2s ease, transform 0.2s ease;
+
+  transition: background .2s,transform .2s;
+
 }
 
-.start-button:hover {
+
+
+.start-button:hover:not(:disabled) {
+
   transform: translateY(-2px);
+
   background: #ff2424;
+
 }
+
+
+
+.start-button:disabled {
+
+  cursor: wait;
+
+  opacity: .72;
+
+}
+
+
 
 .start-button span {
+
   font-size: 22px;
+
 }
+
+
 
 .menu-footnote {
+
   margin-top: 16px;
+
   color: #707b89;
+
   font-size: 9px;
+
   font-weight: 700;
+
   letter-spacing: 1.4px;
+
   text-align: center;
+
 }
 
-/* =========================
-   MOBILE RACING CONTROLS
-========================= */
+
+
+/* =====================================
+
+   CENTER MENU BUTTON
+
+===================================== */
+
+
+
+.game-menu {
+
+  position: fixed;
+
+  z-index: 125;
+
+  top: max(14px,env(safe-area-inset-top));
+
+  left: 50%;
+
+  right: auto;
+
+  transform: translateX(-50%);
+
+  pointer-events: none;
+
+}
+
+
+
+.game-menu-toggle {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 10px;
+
+  min-width: 112px;
+
+  height: 42px;
+
+  padding: 0 17px;
+
+  border: 1px solid rgba(255,255,255,.24);
+
+  border-radius: 6px;
+
+  background: rgba(8,12,19,.82);
+
+  color: #fff;
+
+  box-shadow: 0 5px 22px rgba(0,0,0,.28);
+
+  backdrop-filter: blur(12px);
+
+  font-size: 10px;
+
+  font-weight: 900;
+
+  letter-spacing: 2px;
+
+  pointer-events: auto;
+
+  transition: background .18s,border-color .18s;
+
+}
+
+
+
+.game-menu-toggle:hover,
+
+.game-menu-toggle.is-open {
+
+  border-color: #e10600;
+
+  background: rgba(18,22,30,.96);
+
+}
+
+
+
+.menu-toggle-lines {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 4px;
+
+  width: 17px;
+
+}
+
+
+
+.menu-toggle-lines i {
+
+  display: block;
+
+  width: 17px;
+
+  height: 2px;
+
+  border-radius: 2px;
+
+  background: #ff343b;
+
+}
+
+
+
+/* =====================================
+
+   MENU BACKDROP
+
+===================================== */
+
+
+
+.game-menu-backdrop {
+
+  position: fixed;
+
+  z-index: -1;
+
+  inset: -100vh -100vw;
+
+  width: 200vw;
+
+  height: 300vh;
+
+  border: 0;
+
+  background: rgba(2,5,9,.42);
+
+  backdrop-filter: blur(3px);
+
+  pointer-events: auto;
+
+}
+
+
+
+/* =====================================
+
+   CENTERED MENU PANEL
+
+===================================== */
+
+
+
+.game-menu-panel {
+
+  position: fixed;
+
+  z-index: 2;
+
+  top: 50%;
+
+  left: 50%;
+
+  right: auto;
+
+  width: min(360px,calc(100vw - 30px));
+
+  max-height: min(80vh,520px);
+
+  overflow-y: auto;
+
+  padding: 25px;
+
+  transform: translate(-50%,-50%);
+
+  border: 1px solid rgba(255,255,255,.15);
+
+  border-top: 3px solid #e10600;
+
+  border-radius: 10px;
+
+  background: linear-gradient(145deg,#151c27,#080c13 75%);
+
+  box-shadow: 0 24px 80px rgba(0,0,0,.65);
+
+  pointer-events: auto;
+
+  animation: apex-menu-pop .18s ease-out both;
+
+}
+
+
+
+.game-menu-heading {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 6px;
+
+  margin-bottom: 20px;
+
+  padding-bottom: 16px;
+
+  border-bottom: 1px solid rgba(255,255,255,.12);
+
+  font-family: "Barlow Condensed",sans-serif;
+
+  font-size: 27px;
+
+  font-weight: 900;
+
+  letter-spacing: 1.5px;
+
+}
+
+
+
+.game-menu-heading b {
+
+  color: #ff343b;
+
+}
+
+
+
+.game-menu-heading small {
+
+  color: #8793a2;
+
+  font-family: Inter,sans-serif;
+
+  font-size: 9px;
+
+  letter-spacing: 2px;
+
+}
+
+
+
+.game-menu-action {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 13px;
+
+  width: 100%;
+
+  min-height: 52px;
+
+  margin-top: 9px;
+
+  padding: 0 15px;
+
+  border: 1px solid rgba(255,255,255,.12);
+
+  border-radius: 6px;
+
+  background: rgba(255,255,255,.055);
+
+  color: #f5f7fa;
+
+  font-size: 11px;
+
+  font-weight: 900;
+
+  letter-spacing: 1.2px;
+
+  text-align: left;
+
+}
+
+
+
+.game-menu-action span {
+
+  display: inline-grid;
+
+  width: 22px;
+
+  place-items: center;
+
+  color: #ff454b;
+
+  font-size: 19px;
+
+}
+
+
+
+.game-menu-action.primary {
+
+  border-color: rgba(225,6,0,.55);
+
+  background: rgba(225,6,0,.14);
+
+}
+
+
+
+.game-menu-action:hover {
+
+  border-color: #e10600;
+
+  background: rgba(225,6,0,.12);
+
+}
+
+
+
+.game-menu-close {
+
+  width: 100%;
+
+  margin-top: 15px;
+
+  padding: 12px;
+
+  border: 0;
+
+  background: transparent;
+
+  color: #98a4b2;
+
+  font-size: 9px;
+
+  font-weight: 900;
+
+  letter-spacing: 2px;
+
+}
+
+
+
+.game-menu-close:hover {
+
+  color: #fff;
+
+}
+
+
+
+/* =====================================
+
+   MINIMAL PAUSE SCREEN — ONLY ||
+
+===================================== */
+
+
+
+.pause-overlay {
+
+  position: fixed;
+
+  z-index: 200;
+
+  inset: 0;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  background: rgba(0, 0, 0, 0.06);
+
+  backdrop-filter: blur(2px);
+
+}
+
+
+
+.pause-icon-only {
+
+  width: 150px;
+
+  height: 150px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  padding: 0;
+
+  border: none;
+
+  border-radius: 0;
+
+  background: transparent;
+
+  color: #fff;
+
+  font-family: Arial, sans-serif;
+
+  font-size: 150px;
+
+  font-weight: 900;
+
+  letter-spacing: -12px;
+
+  line-height: 1;
+
+  cursor: pointer;
+
+  text-shadow: 0 3px 18px rgba(0, 0, 0, 0.45);
+
+  transition: transform 0.2s ease;
+
+}
+
+
+
+.pause-icon-only:hover {
+
+  background: transparent;
+
+  transform: scale(1.12);
+
+}
+
+
+
+.pause-icon-only:active {
+
+  transform: scale(0.95);
+
+}
+
+
+
+@media (max-width: 700px) {
+
+  .pause-icon-only {
+
+    width: 110px;
+
+    height: 110px;
+
+    font-size: 110px;
+
+    letter-spacing: -9px;
+
+  }
+
+}
+
+
+
+.scene-loading {
+
+  position: fixed;
+
+  z-index: 90;
+
+  inset: 0;
+
+  display: grid;
+
+  place-items: center;
+
+  padding: 20px;
+
+  background: #080b10;
+
+  pointer-events: none;
+
+}
+
+
+
+.scene-loading-card {
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  text-align: center;
+
+}
+
+
+
+.scene-loading-mark {
+
+  margin-bottom: 25px;
+
+  font-family: "Barlow Condensed",sans-serif;
+
+  font-size: 30px;
+
+  font-weight: 900;
+
+  letter-spacing: 3px;
+
+}
+
+
+
+.scene-loading-mark span {
+
+  color: #e10600;
+
+}
+
+
+
+.scene-loading-spinner {
+
+  width: 38px;
+
+  height: 38px;
+
+  margin-bottom: 20px;
+
+  border: 3px solid rgba(255,255,255,.14);
+
+  border-top-color: #e10600;
+
+  border-radius: 50%;
+
+  animation: apex-spin .8s linear infinite;
+
+}
+
+
+
+.scene-loading-title {
+
+  color: #fff;
+
+  font-size: 11px;
+
+  font-weight: 900;
+
+  letter-spacing: 2px;
+
+}
+
+
+
+.scene-loading-subtitle {
+
+  margin-top: 9px;
+
+  color: #7f8997;
+
+  font-size: 10px;
+
+}
+
+
+
+@keyframes apex-spin {
+
+  to { transform: rotate(360deg); }
+
+}
+
+
+
+@keyframes apex-menu-pop {
+
+  from {
+
+    opacity: 0;
+
+    transform: translate(-50%,-47%) scale(.97);
+
+  }
+
+  to {
+
+    opacity: 1;
+
+    transform: translate(-50%,-50%) scale(1);
+
+  }
+
+}
+
+
+
+/* =====================================
+
+   MOBILE CONTROLS
+
+===================================== */
+
+
 
 .mobile-controls {
+
   display: none;
+
 }
+
+
 
 .control-left,
+
 .control-right {
+
   display: flex;
+
   align-items: flex-end;
+
   gap: 16px;
+
 }
+
+
 
 .touch-control {
+
   display: flex;
+
   justify-content: center;
+
   align-items: center;
+
   width: 76px;
+
   height: 76px;
-  border: 2px solid rgba(255, 255, 255, 0.65);
+
+  border: 2px solid rgba(255,255,255,.65);
+
   border-radius: 50%;
-  background: rgba(12, 17, 26, 0.78);
-  color: white;
+
+  background: rgba(12,17,26,.78);
+
+  color: #fff;
+
   font-size: 25px;
+
   font-weight: 900;
+
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+
   touch-action: none;
+
   user-select: none;
+
   -webkit-user-select: none;
+
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.1s ease, transform 0.1s ease;
+
+  transition: background .1s,transform .1s;
+
 }
 
-.touch-control:active {
+
+
+.touch-control:active,
+
+.touch-control.active {
+
   background: #e10600;
-  transform: scale(0.92);
+
+  transform: scale(.92);
+
 }
+
+
 
 .reverse-btn {
-  background: rgba(225, 6, 0, 0.68);
+
+  background: rgba(225,6,0,.68);
+
   font-size: 15px;
+
   letter-spacing: 1px;
+
 }
+
+
 
 .accelerate-btn {
+
   width: 88px;
+
   height: 88px;
-  background: rgba(0, 175, 90, 0.72);
+
+  background: rgba(0,145,78,.82);
+
   font-size: 34px;
+
 }
+
+
 
 .steer-btn {
+
   font-size: 30px;
+
 }
 
-/* =========================
+
+
+.mini-btn {
+
+  width: 58px;
+
+  height: 58px;
+
+  font-size: 12px;
+
+}
+
+
+
+/* =====================================
+
+   ROTATE NOTICE
+
+===================================== */
+
+
+
+.rotate-notice {
+
+  display: none;
+
+}
+
+
+
+/* =====================================
+
    MOBILE LANDSCAPE
-========================= */
+
+===================================== */
+
+
 
 @media (max-width: 900px) and (orientation: landscape) {
 
   .mobile-controls {
+
     position: fixed;
-    z-index: 7;
+
+    z-index: 20;
+
     inset: 0;
+
     display: flex;
+
     justify-content: space-between;
+
     align-items: flex-end;
+
     padding: 0 28px 30px;
+
     pointer-events: none;
+
     touch-action: none;
+
   }
+
+
 
   .control-left,
+
   .control-right {
+
     pointer-events: auto;
+
   }
+
+
 
   .touch-control {
+
     min-width: 64px;
+
     min-height: 64px;
+
   }
+
+
 
   .accelerate-btn {
+
     width: 82px;
+
     height: 82px;
+
   }
+
+
 
   .menu-panel {
-    width: min(440px, 80vw);
+
+    width: min(440px,80vw);
+
     padding: 25px;
+
   }
+
+
 
   .menu-panel h1 {
+
     font-size: 55px;
+
   }
+
+
 
   .menu-panel p {
+
     margin: 12px 0 16px;
+
     font-size: 11px;
+
   }
 
-  .menu-footnote {
-    margin-top: 10px;
+
+
+  .game-menu {
+
+    top: 10px;
+
   }
+
 }
 
-/* =========================
+
+
+/* =====================================
+
    MOBILE PORTRAIT
-========================= */
+
+===================================== */
+
+
 
 @media (max-width: 900px) and (orientation: portrait) {
 
   .menu-panel {
+
     padding: 28px 22px;
+
   }
+
+
 
   .menu-panel h1 {
+
     font-size: 55px;
+
   }
+
+
+
+  .rotate-notice {
+
+    position: fixed;
+
+    z-index: 40;
+
+    inset: auto 12px 12px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 9px;
+
+    padding: 12px 14px;
+
+    border: 1px solid rgba(255,255,255,.16);
+
+    border-radius: 8px;
+
+    background: rgba(8,11,16,.82);
+
+    color: #fff;
+
+    font-size: 9px;
+
+    font-weight: 900;
+
+    letter-spacing: 1.4px;
+
+    pointer-events: none;
+
+    backdrop-filter: blur(10px);
+
+  }
+
+
+
+  .rotate-notice span {
+
+    color: #ff555a;
+
+    font-size: 19px;
+
+  }
+
 }
 
-/* =========================
+
+
+/* =====================================
+
    SMALL LANDSCAPE PHONES
-========================= */
+
+===================================== */
+
+
 
 @media (max-width: 700px) and (orientation: landscape) {
 
   .mobile-controls {
+
     padding: 0 16px 14px;
+
   }
+
+
 
   .control-left,
+
   .control-right {
+
     gap: 10px;
+
   }
+
+
 
   .touch-control {
+
     width: 60px;
+
     height: 60px;
+
     min-width: 60px;
+
     min-height: 60px;
+
     font-size: 22px;
+
   }
+
+
 
   .reverse-btn {
+
     font-size: 13px;
+
   }
+
+
 
   .accelerate-btn {
+
     width: 70px;
+
     height: 70px;
+
     min-width: 70px;
+
     min-height: 70px;
+
     font-size: 29px;
+
   }
+
+
+
+  .mini-btn {
+
+    width: 48px;
+
+    height: 48px;
+
+    min-width: 48px;
+
+    min-height: 48px;
+
+    font-size: 10px;
+
+  }
+
+
+
+  .race-hud {
+
+    min-height: 58px;
+
+    gap: 8px;
+
+    padding: 7px 12px;
+
+  }
+
+
+
+  .race-brand {
+
+    font-size: 17px;
+
+  }
+
+
+
+  .hud-center {
+
+    gap: 5px;
+
+  }
+
+
+
+  .hud-stat {
+
+    min-width: 58px;
+
+    padding: 5px 7px;
+
+  }
+
+
+
+  .speed-panel strong {
+
+    font-size: 27px;
+
+  }
+
+
+
+  .race-position {
+
+    top: 64px;
+
+    left: 12px;
+
+    padding: 7px 10px;
+
+    font-size: 14px;
+
+  }
+
 }
 
-/* =========================
+
+
+/* =====================================
+
    SHORT SCREENS
-========================= */
+
+===================================== */
+
+
 
 @media (max-height: 420px) and (orientation: landscape) {
 
   .mobile-controls {
+
     padding-bottom: 9px;
+
   }
+
+
 
   .touch-control {
+
     width: 54px;
+
     height: 54px;
+
     min-width: 54px;
+
     min-height: 54px;
+
   }
+
+
 
   .accelerate-btn {
+
     width: 64px;
+
     height: 64px;
+
     min-width: 64px;
+
     min-height: 64px;
+
   }
+
+
+
+  .mini-btn {
+
+    width: 44px;
+
+    height: 44px;
+
+    min-width: 44px;
+
+    min-height: 44px;
+
+  }
+
 }
+
+
+
 /* =====================================
-   START MENU — FIX OVERLAPPING HUD
+
+   DESKTOP REFINEMENTS
+
 ===================================== */
 
-.menu-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 9999 !important;
 
+
+@media (min-width: 901px) {
+
+  .game-menu {
+
+    top: 20px;
+
+  }
+
+}
+
+
+
+/* =====================================
+
+   PAUSE ICON RESPONSIVENESS
+
+===================================== */
+
+
+
+@media (max-width: 700px) {
+
+  .game-menu {
+
+    top: max(9px,env(safe-area-inset-top));
+
+  }
+
+
+
+  .game-menu-toggle {
+
+    min-width: 94px;
+
+    height: 37px;
+
+    font-size: 9px;
+
+  }
+
+
+
+  .game-menu-panel {
+
+    width: min(340px,calc(100vw - 24px));
+
+    padding: 20px;
+
+  }
+
+
+
+  .game-menu-action {
+
+    min-height: 48px;
+
+  }
+
+
+
+  .pause-icon-only {
+
+    width: 58px;
+
+    height: 58px;
+
+    font-size: 27px;
+
+  }
+
+}
+
+
+
+@media (pointer: coarse) and (orientation: landscape) {
+
+  .pause-icon-only {
+
+    width: 56px;
+
+    height: 56px;
+
+    font-size: 26px;
+
+  }
+
+}
+
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+
+  *::before,
+
+  *::after {
+
+    scroll-behavior: auto !important;
+
+    animation-duration: .01ms !important;
+
+    transition-duration: .01ms !important;
+
+  }
+
+}
+
+/* =========================================================
+   FINAL MENU POSITION FIX
+   Keep the MENU trigger at the top-centre and the opened
+   race-control board exactly in the centre of the viewport.
+========================================================= */
+
+.game-menu {
+  position: fixed;
+  z-index: 125;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  right: auto;
+  transform: none;
+  pointer-events: none;
+}
+
+.game-menu-toggle {
+  position: relative;
+  display: inline-flex;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.game-menu-panel {
+  position: fixed !important;
+  z-index: 300 !important;
+  top: 50% !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(85vh, 650px);
+  overflow-y: auto;
+  margin: 0 !important;
+  transform: translate(-50%, -50%) !important;
+  animation: apex-centered-menu-in 0.2s ease-out both;
+}
+
+@keyframes apex-centered-menu-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -47%) !important;
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) !important;
+  }
+}
+
+/* Keep the minimal white pause bars large and centred. */
+.pause-overlay {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-
-  pointer-events: auto !important;
+  background: rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
 }
 
-.menu-panel {
-  position: relative !important;
-  z-index: 10000 !important;
-
-  width: min(500px, 92vw);
-  overflow: visible;
-}
-
-/* Keep the Start button clearly visible */
-.start-button {
-  position: relative !important;
-  z-index: 10001 !important;
-
+.pause-icon-only {
+  width: 170px;
+  height: 170px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-
-  min-height: 50px;
-  width: 100%;
-
-  margin-top: 24px;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.96);
+  font-family: Arial, sans-serif;
+  font-size: 170px;
+  font-weight: 900;
+  letter-spacing: -13px;
+  line-height: 1;
   cursor: pointer;
-  pointer-events: auto !important;
+  text-shadow: 0 3px 18px rgba(0, 0, 0, 0.45);
+  transition: transform 0.18s ease;
 }
 
-/* Prevent dashboard elements from appearing above menu */
-.menu-overlay ~ * {
-  z-index: auto;
+.pause-icon-only:hover {
+  background: transparent;
+  transform: scale(1.08);
 }
 
-/* Keep menu text readable */
-.menu-panel h1,
-.menu-panel p,
-.menu-kicker,
-.menu-footnote {
-  position: relative;
-  z-index: 2;
+.pause-icon-only:active {
+  transform: scale(0.95);
+}
+
+@media (max-width: 700px) {
+  .game-menu {
+    top: max(9px, env(safe-area-inset-top));
+  }
+
+  .game-menu-panel {
+    width: min(420px, calc(100vw - 24px));
+    max-height: 82vh;
+  }
+
+  .pause-icon-only {
+    width: 125px;
+    height: 125px;
+    font-size: 125px;
+    letter-spacing: -10px;
+  }
 }
