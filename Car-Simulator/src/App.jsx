@@ -56,6 +56,130 @@ function SceneReady({ onReady }) {
 // MOBILE CONTROLS
 // --------------------------------------------------
 
+// Layout overrides for touch devices in landscape only.
+// GAS is large, BRAKE is smaller, with a wide gap between them.
+// ERS / DRS sit above GAS. Desktop is unaffected.
+const MOBILE_LAYOUT_CSS = `
+@media (pointer: coarse) and (orientation: landscape) {
+  .mobile-controls .control-left,
+  .mobile-controls .control-right {
+    position: fixed !important;
+    inset: 0 !important;
+    display: block !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .mobile-controls .touch-control {
+    position: absolute !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    pointer-events: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  /* LEFT / RIGHT steering buttons: large and clearly separated */
+  .mobile-controls .steer-btn {
+    width: clamp(88px, 25vh, 118px) !important;
+    height: clamp(88px, 25vh, 118px) !important;
+    bottom: max(18px, env(safe-area-inset-bottom)) !important;
+    border-radius: 24px !important;
+    font-size: 19px !important;
+    font-weight: 900 !important;
+  }
+
+  .mobile-controls .steer-left {
+    left: max(18px, env(safe-area-inset-left)) !important;
+  }
+
+  .mobile-controls .steer-right {
+    left: calc(max(18px, env(safe-area-inset-left)) + clamp(88px, 25vh, 118px) + 22px) !important;
+  }
+
+  /* GAS is intentionally larger than BRAKE */
+  .mobile-controls .accelerate-btn {
+    width: clamp(116px, 36vh, 158px) !important;
+    height: clamp(116px, 36vh, 158px) !important;
+    right: max(18px, env(safe-area-inset-right)) !important;
+    bottom: max(18px, env(safe-area-inset-bottom)) !important;
+    font-size: 20px !important;
+    font-weight: 900 !important;
+    border-radius: 27px !important;
+  }
+
+  .mobile-controls .reverse-btn {
+    width: clamp(88px, 27vh, 116px) !important;
+    height: clamp(88px, 27vh, 116px) !important;
+    right: calc(max(18px, env(safe-area-inset-right)) + clamp(116px, 36vh, 158px) + 26px) !important;
+    bottom: max(18px, env(safe-area-inset-bottom)) !important;
+    font-size: 16px !important;
+    font-weight: 900 !important;
+    border-radius: 23px !important;
+  }
+
+  /* ERS / DRS remain above the pedals */
+  .mobile-controls .mini-btn {
+    width: 54px !important;
+    height: 54px !important;
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + clamp(116px, 36vh, 158px) + 13px) !important;
+    font-size: 12px !important;
+  }
+
+  .mobile-controls .mini-btn:nth-child(1) {
+    right: calc(max(18px, env(safe-area-inset-right)) + 54px + 12px) !important;
+  }
+
+  .mobile-controls .mini-btn:nth-child(2) {
+    right: max(18px, env(safe-area-inset-right)) !important;
+  }
+}
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
+  .mobile-controls .steer-btn {
+    width: 76px !important;
+    height: 76px !important;
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    border-radius: 19px !important;
+    font-size: 16px !important;
+  }
+
+  .mobile-controls .steer-right {
+    left: calc(max(10px, env(safe-area-inset-left)) + 76px + 16px) !important;
+  }
+
+  .mobile-controls .steer-left {
+    left: max(10px, env(safe-area-inset-left)) !important;
+  }
+
+  .mobile-controls .accelerate-btn {
+    width: 104px !important;
+    height: 104px !important;
+    right: max(10px, env(safe-area-inset-right)) !important;
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .mobile-controls .reverse-btn {
+    width: 78px !important;
+    height: 78px !important;
+    right: calc(max(10px, env(safe-area-inset-right)) + 104px + 18px) !important;
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .mobile-controls .mini-btn {
+    width: 46px !important;
+    height: 46px !important;
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 104px + 10px) !important;
+  }
+}
+`;
+
 function ControlButton({ label, field, mobileRef, className = "" }) {
   const set = (on) => {
     mobileRef.current[field] = on;
@@ -87,10 +211,12 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
   );
 }
 
+
+
 const TOUCH = {
   left: [
-    ["◀", "left", "steer-btn"],
-    ["▶", "right", "steer-btn"],
+    ["LEFT", "left", "steer-btn steer-left"],
+    ["RIGHT", "right", "steer-btn steer-right"],
   ],
   right: [
     ["ERS", "ers", "mini-btn"],
@@ -314,6 +440,29 @@ function SceneLoading({ visible }) {
   );
 }
 
+function TapButton({ label, keyName }) {
+  return (
+    <button
+      type="button"
+      className="touch-control"
+      onPointerDown={(e) => {
+        e.preventDefault();
+
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: keyName,
+            code: keyName === "r" ? "KeyR" : "KeyC",
+            bubbles: true,
+          })
+        );
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {label}
+    </button>
+  );
+}
+
 // --------------------------------------------------
 // MAIN APP
 // --------------------------------------------------
@@ -521,65 +670,17 @@ export default function App() {
       {/* MOBILE CONTROLS */}
 
       <div className="mobile-controls">
-        <style>{`
-          @media (pointer:coarse) and (orientation:landscape) {
-            .mobile-controls .control-left {
-              position:absolute!important; left:max(18px,env(safe-area-inset-left))!important;
-              right:auto!important; bottom:max(18px,env(safe-area-inset-bottom))!important;
-              top:auto!important; width:auto!important; height:auto!important;
-              display:flex!important; flex-direction:row!important; align-items:center!important;
-              justify-content:center!important; gap:clamp(18px,3vw,34px)!important;
-              margin:0!important; pointer-events:auto!important;
-            }
-            .mobile-controls .control-left .touch-control {
-              width:clamp(66px,12vh,94px)!important;
-              height:clamp(66px,12vh,94px)!important; min-width:0!important;
-              border-radius:50%!important; font-size:clamp(25px,4vh,34px)!important;
-              font-weight:900!important; touch-action:none!important;
-              box-shadow:0 5px 14px rgba(0,0,0,.5),inset 0 1px 2px rgba(255,255,255,.2)!important;
-            }
-            .mobile-controls .control-right {
-              position:absolute!important; right:max(18px,env(safe-area-inset-right))!important;
-              left:auto!important; bottom:max(18px,env(safe-area-inset-bottom))!important;
-              top:auto!important; width:auto!important; height:auto!important;
-              display:grid!important; grid-template-columns:auto auto!important;
-              grid-template-rows:auto auto!important; align-items:center!important;
-              justify-items:center!important; column-gap:clamp(14px,2.5vw,28px)!important;
-              row-gap:clamp(12px,2vh,20px)!important; margin:0!important;
-              pointer-events:auto!important;
-            }
-            .mobile-controls .control-right .mini-btn { grid-row:1!important; }
-            .mobile-controls .control-right .reverse-btn { grid-column:1!important; grid-row:2!important; }
-            .mobile-controls .control-right .accelerate-btn {
-              grid-column:2!important; grid-row:2!important;
-              width:clamp(82px,15vh,112px)!important;
-              height:clamp(82px,15vh,112px)!important;
-              font-size:clamp(15px,2.5vh,20px)!important;
-              font-weight:900!important; border-radius:50%!important;
-            }
-            .mobile-controls .control-right .reverse-btn {
-              width:clamp(70px,12vh,92px)!important;
-              height:clamp(70px,12vh,92px)!important;
-              font-size:clamp(13px,2.2vh,17px)!important;
-              font-weight:900!important; border-radius:50%!important;
-            }
-            .mobile-controls .control-right .mini-btn {
-              width:clamp(42px,7vh,54px)!important;
-              height:clamp(32px,5.5vh,42px)!important;
-              font-size:clamp(9px,1.6vh,12px)!important;
-            }
-          }
-          @media (pointer:coarse) and (orientation:landscape) and (max-height:420px) {
-            .mobile-controls .control-left { gap:16px!important; bottom:10px!important; }
-            .mobile-controls .control-left .touch-control { width:62px!important;height:62px!important; }
-            .mobile-controls .control-right { right:10px!important;bottom:10px!important;column-gap:12px!important;row-gap:9px!important; }
-            .mobile-controls .control-right .accelerate-btn { width:76px!important;height:76px!important; }
-            .mobile-controls .control-right .reverse-btn { width:64px!important;height:64px!important; }
-          }
-        `}</style>
+        <style>{MOBILE_LAYOUT_CSS}</style>
+
         <div className="control-left">
           {TOUCH.left.map(([label, field, cls]) => (
-            <ControlButton key={field} label={label} field={field} className={cls} mobileRef={mobileRef} />
+            <ControlButton
+              key={label}
+              label={label}
+              field={field}
+              className={cls}
+              mobileRef={mobileRef}
+            />
           ))}
         </div>
 
