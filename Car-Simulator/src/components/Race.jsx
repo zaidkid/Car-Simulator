@@ -38,18 +38,18 @@ const DRS_GAP = 1.0; // seconds to the car ahead
 // ---- AI field: every AI gets a different pace each race ----
 // pace is 0 (slowest) .. 1 (fastest). Paces are shuffled across the five AI
 // cars at the start of every race, so the grid order says nothing about who is quick.
-const AI_SPEED_MIN = 46; // m/s (~166 km/h): slower AI
-const AI_SPEED_MAX = 60; // m/s (~216 km/h): fastest AI
-const AI_GRIP_MIN = 0.82; // slower drivers lose more speed in corners
-const AI_GRIP_MAX = 0.94; // strongest AI remains below player performance
-const PACE_JITTER = 0.28; // varied but controlled pace differences
+const AI_SPEED_MIN = 60; // competitive baseline pace (~216 km/h)
+const AI_SPEED_MAX = 66; // fast drivers (~238 km/h), with a tighter field spread
+const AI_GRIP_MIN = 0.98;
+const AI_GRIP_MAX = 1.06;
+const PACE_JITTER = 0.08; // keep the pack close; avoid one AI being randomly much slower
 
 // ---- AI racecraft ----
-const PASS_LOOKAHEAD = 24; // m: how far ahead an AI looks for a slower car
-const PASS_CLEARANCE = 3.6; // m: sideways gap used when going around a car
-const LAT_LIMIT = TRACK_WIDTH - 1.6; // AI never goes wider than this
-const RUBBER_BAND = 0.025; // 0 = off. +/- this fraction of speed to keep the race close to the player
-const RUBBER_RANGE = 250; // m of gap to the player at which rubber-banding is at full strength
+const PASS_LOOKAHEAD = 38; // AI plans overtakes earlier
+const PASS_CLEARANCE = 4.0;
+const LAT_LIMIT = TRACK_WIDTH - 1.35;
+const RUBBER_BAND = 0.035; // subtle catch-up to prevent the AI pack stretching too far away
+const RUBBER_RANGE = 190; // m of gap to the player at which rubber-banding is at full strength
 
 const AI_COLORS = ["#3671ff", "#e10600", "#ff8700", "#e10600", "#00d2be"];
 const UP = new THREE.Vector3(0, 1, 0);
@@ -114,7 +114,7 @@ const curvature = rawCurvature.map((_, i) => {
 });
 
 // Fastest speed (m/s) a car can carry through each part of the track
-const AI_LATERAL_ACCEL = 40;
+const AI_LATERAL_ACCEL = 47;
 const cornerSpeed = curvature.map((k) =>
   THREE.MathUtils.clamp(Math.sqrt(AI_LATERAL_ACCEL / Math.max(Math.abs(k), 1e-4)), 28, 120)
 );
@@ -466,23 +466,30 @@ function resetDriver(o, index, pace) {
     lat: o.lane,
     finishTime: null,
 
-    // pace / personality
+    // HARD difficulty: pace is competitive, with small driver-to-driver variation.
     pace,
     maxSpeed: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
     gripScale: AI_GRIP_MIN + pace * (AI_GRIP_MAX - AI_GRIP_MIN),
+    // Distinct driver traits: Norris, Leclerc, Hamilton, Verstappen, Russell.
+    aggression: [0.94, 0.78, 0.82, 1.0, 0.76][index] ?? 0.82,
+    defense: [0.78, 0.88, 0.98, 0.84, 0.90][index] ?? 0.84,
+    consistency: [0.82, 0.94, 0.98, 0.88, 0.97][index] ?? 0.9,
+    risk: [0.92, 0.72, 0.68, 1.0, 0.74][index] ?? 0.8,
+    defendOffset: 0,
     // Cache the expensive look-ahead braking calculation between frames.
     brakeTarget: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
     smoothedTarget: AI_SPEED_MIN + pace * (AI_SPEED_MAX - AI_SPEED_MIN),
     brakeTargetTimer: 0,
     // Noticeable differences in acceleration and launch reaction.
-    power: 0.62 + pace * 0.16,
-    reaction: 0.08 + Math.random() * (0.62 - pace * 0.30),
-    form: 0.97 + Math.random() * 0.06,
-    formTarget: 0.97 + Math.random() * 0.06,
-    formTimer: 2.5 + Math.random() * 4.5,
+    power: 0.90 + pace * 0.12,
+    reaction: 0.04 + Math.random() * 0.20,
+    form: 0.99 + Math.random() * 0.02,
+    formTarget: 0.99 + Math.random() * 0.02,
+    formTimer: 7 + Math.random() * 8,
     mistake: 0,
     mistakeSeverity: 0,
-    mistakeIn: (12 + Math.random() * 22) * (0.7 + pace * 0.8),
+    // Hard AI makes rare, small mistakes rather than repeatedly giving away time.
+    mistakeIn: (32 + Math.random() * 28) * (0.9 + (1 - pace) * 0.25),
 
     // overtaking
     passSide: 0,
@@ -760,15 +767,15 @@ export default function Race({ carRef, hudRef, paused = false }) {
 
     // ---- AI opponents ----
     opponents.forEach((o, oi) => {
-      const AI_BRAKE = 38;
+      const AI_BRAKE = 44;
 
       if (racing) {
         // Random form: pace drifts a little up and down during the race
         o.formTimer -= dt;
         if (o.formTimer <= 0) {
           // Driver form changes over a stint; each AI has its own pace rhythm.
-          o.formTarget = 0.955 + Math.random() * 0.09;
-          o.formTimer = 4 + Math.random() * 7;
+          o.formTarget = 0.995 + Math.random() * 0.018;
+          o.formTimer = 7 + Math.random() * 9;
         }
         o.form = THREE.MathUtils.damp(o.form, o.formTarget, 0.8, dt);
 
@@ -778,9 +785,9 @@ export default function Race({ carRef, hudRef, paused = false }) {
           o.mistake -= dt;
         } else if (o.mistakeIn <= 0) {
           // Lower-rated drivers make mistakes more often and lose more time.
-          o.mistake = 0.7 + Math.random() * 1.4;
-          o.mistakeSeverity = (0.07 + Math.random() * 0.16) * (1.25 - o.pace * 0.55);
-          o.mistakeIn = (8 + Math.random() * 18) * (0.65 + o.pace * 1.0);
+          o.mistake = 0.35 + Math.random() * 0.65;
+          o.mistakeSeverity = (0.025 + Math.random() * 0.055) * (1.15 - o.consistency * 0.25);
+          o.mistakeIn = (32 + Math.random() * 30) * (0.9 + o.consistency * 0.2);
         }
         const mistakeScale = o.mistake > 0 ? 1 - o.mistakeSeverity : 1;
 
@@ -812,16 +819,23 @@ export default function Race({ carRef, hudRef, paused = false }) {
           });
 
           // ---- overtaking: pull out and go around a slower car ----
-          const closing = blocker && (o.speed - blocker.speed > 1 || blockGap < 8);
+          const closing = blocker && (
+            o.speed - blocker.speed > -1.5 ||
+            blockGap < 13
+          );
 
           if (closing) {
             if (o.passSide === 0) {
-              let side = o.lat >= blocker.lat ? 1 : -1;
+              // Prefer the side with more room; the most aggressive drivers
+              // commit earlier and are less likely to abandon a clean pass.
+              const leftRoom = LAT_LIMIT - (blocker.lat + PASS_CLEARANCE);
+              const rightRoom = LAT_LIMIT + (blocker.lat - PASS_CLEARANCE);
+              let side = leftRoom >= rightRoom ? 1 : -1;
               if (Math.abs(blocker.lat + side * PASS_CLEARANCE) > LAT_LIMIT) side = -side;
               o.passSide = side;
             }
 
-            o.passHold = 0.8;
+            o.passHold = 1.35 + o.aggression * 0.5;
             o.passTarget =
               THREE.MathUtils.clamp(blocker.lat + o.passSide * PASS_CLEARANCE, -LAT_LIMIT, LAT_LIMIT) -
               (o.lane + o.laneOffset);
@@ -847,13 +861,13 @@ export default function Race({ carRef, hudRef, paused = false }) {
               o.gripScale,
               AI_BRAKE,
             );
-            o.brakeTargetTimer = 0.1;
+            o.brakeTargetTimer = 0.08;
           }
           let target = o.brakeTarget;
           o.smoothedTarget = THREE.MathUtils.damp(
             o.smoothedTarget ?? target,
             target,
-            4.5,
+            6.0,
             dt,
           );
           target = o.smoothedTarget;
@@ -869,18 +883,18 @@ export default function Race({ carRef, hudRef, paused = false }) {
             tow = THREE.MathUtils.clamp(1 - blockGap / PASS_LOOKAHEAD, 0, 1);
           }
 
-          target *= o.form * rubber * mistakeScale * (1 + 0.03 * tow);
-          target = Math.min(target, o.maxSpeed * 1.04);
+          target *= o.form * rubber * mistakeScale * (1 + 0.045 * tow);
+          target = Math.min(target, o.maxSpeed * 1.08);
 
           // Stuck right behind a car in the same line: match its speed until there is room to pass
-          if (blocker && blockGap < 10 && Math.abs(blocker.lat - o.lat) < 2.4) {
+          if (blocker && blockGap < 8 && o.passSide === 0 && Math.abs(blocker.lat - o.lat) < 2.0) {
             target = Math.min(target, Math.max(0, blocker.speed + (blockGap - 6) * 0.8));
           }
 
           if (o.speed > target) {
             o.speed = Math.max(target, o.speed - AI_BRAKE * dt);
           } else {
-            const acceleration = THREE.MathUtils.clamp(5.5 - 0.045 * o.speed, 1.2, 4.8) * o.power;
+            const acceleration = THREE.MathUtils.clamp(8.0 - 0.050 * o.speed, 2.2, 6.8) * o.power;
             o.speed = Math.min(target, o.speed + acceleration * dt);
           }
 
@@ -898,18 +912,39 @@ export default function Race({ carRef, hudRef, paused = false }) {
       o.impactOffset = THREE.MathUtils.damp(o.impactOffset, o.impactDirection * 2.1 * impact, 3.2, dt);
       o.impactYaw = THREE.MathUtils.damp(o.impactYaw, o.impactDirection * 0.24 * impact, 3.2, dt);
 
-      // Racing line: drift toward the inside of corners
+      // Racing line: use a stronger, smoother corner entry/exit line.
       const k = curvature[Math.floor(wrap(o.distance) / DS) % SAMPLES];
-      const cornerWeight = THREE.MathUtils.clamp(Math.abs(k) / 0.006, 0, 1);
-      const targetLane = o.lane + Math.sign(k) * cornerWeight * 2.5;
+      const cornerWeight = THREE.MathUtils.clamp(Math.abs(k) / 0.0055, 0, 1);
+      const targetLane = o.lane + Math.sign(k) * cornerWeight * 3.1;
 
-      o.laneOffset = THREE.MathUtils.damp(o.laneOffset, targetLane - o.lane, 1.5, dt);
+      o.laneOffset = THREE.MathUtils.damp(o.laneOffset, targetLane - o.lane, 2.1, dt);
+
+      // Defensive positioning: when the player is close behind, the AI
+      // protects the side the player is trying to use without steering into them.
+      const playerGapToAI = o.distance - state.distance;
+      let defendTarget = 0;
+      if (
+        racing &&
+        playerGapToAI > 0.5 &&
+        playerGapToAI < 20 &&
+        Math.abs(track.offset - o.lat) < 5.5
+      ) {
+        const playerSide = Math.sign(track.offset - (o.lane + o.laneOffset));
+        if (playerSide !== 0) {
+          defendTarget = THREE.MathUtils.clamp(
+            playerSide * 1.35 * o.defense,
+            -1.65,
+            1.65
+          );
+        }
+      }
+      o.defendOffset = THREE.MathUtils.damp(o.defendOffset || 0, defendTarget, 3.0, dt);
 
       // Smoothly move out to (or back from) an overtaking line
       o.passOffset = THREE.MathUtils.damp(o.passOffset, o.passTarget, 2.2, dt);
 
       const lateral = THREE.MathUtils.clamp(
-        o.lane + o.laneOffset + o.passOffset + o.impactOffset,
+        o.lane + o.laneOffset + o.passOffset + o.defendOffset + o.impactOffset,
         -LAT_LIMIT,
         LAT_LIMIT
       );
