@@ -37,11 +37,16 @@ const CAR = {
   reverseSpeed: 20,
   reverseAccel: 9,
 
-  roadGrip: 5.5,
-  gripPerSpeed: 0.035,
-  lateralBase: 14,
-  downforceLat: 0.0054,
-  maxYawLow: 1.6,
+  // ---- cornering / steering (v2: much more responsive) ----
+  roadGrip: 7, // how quickly sideways sliding is killed (was 5.5)
+  gripPerSpeed: 0.05, // extra grip with speed (was 0.035)
+  lateralBase: 24, // sideways acceleration available at low speed, m/s^2 (was 14)
+  downforceLat: 0.0085, // extra sideways acceleration from downforce (was 0.0054)
+  maxYawLow: 2.2, // maximum turn rate at low speed, rad/s (was 1.6)
+
+  steerRate: 8, // how fast the wheel turns toward the input (was 5.5)
+  steerReturn: 11, // how fast the wheel returns to centre (was 8)
+  steerSpeedFade: 80, // steering ramp slows only slightly with speed (was 30)
 
   ersDrain: 7,
   ersRecharge: 3,
@@ -745,9 +750,18 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     // ==========================================
     // STEERING
+    // The wheel now reaches full lock quickly at every speed, and
+    // swinging from one side to the other is even faster (counter-steer).
     // ==========================================
 
-    const steerRate = (steerInput === 0 ? 8 : 5.5) / (1 + v / 30);
+    const steerBase = steerInput === 0 ? CAR.steerReturn : CAR.steerRate;
+
+    const counterSteer =
+      steerInput !== 0 && Math.sign(steerInput) !== Math.sign(c.steer) && c.steer !== 0
+        ? 1.5
+        : 1;
+
+    const steerRate = (steerBase * counterSteer) / (1 + v / CAR.steerSpeedFade);
 
     c.steer = approach(c.steer, steerInput, steerRate, dt);
 
@@ -756,7 +770,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const yawCap = Math.min(CAR.maxYawLow, aLatMax / Math.max(v, 1));
 
     const lowSpeed = THREE.MathUtils.clamp(
-      Math.abs(nextForwardSpeed) / 5,
+      Math.abs(nextForwardSpeed) / 4,
       0.12,
       1,
     );
@@ -871,9 +885,10 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     c.longG = THREE.MathUtils.damp(c.longG, longG, 10, dt);
 
+    // Clamped so the sharper steering never shows silly numbers on the HUD
     c.latG = THREE.MathUtils.damp(
       c.latG,
-      (steeringRate * nextForwardSpeed) / G,
+      THREE.MathUtils.clamp((steeringRate * nextForwardSpeed) / G, -6, 6),
       10,
       dt,
     );
