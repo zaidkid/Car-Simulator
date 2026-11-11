@@ -87,6 +87,185 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
   );
 }
 
+function SteeringWheel({ mobileRef }) {
+  const wheelRef = useRef(null);
+  const pointerIdRef = useRef(null);
+  const angleRef = useRef(0);
+
+  const updateSteering = (event) => {
+    const element = wheelRef.current;
+    if (!element) return;
+
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const normalized = Math.max(
+      -1,
+      Math.min(1, (event.clientX - centerX) / (rect.width * 0.34))
+    );
+
+    // Rotate the visual wheel and translate its position into smooth,
+    // progressive left/right steering using the existing Car input fields.
+    const angle = normalized * 135;
+    angleRef.current = angle;
+    if (wheelRef.current) {
+      wheelRef.current.style.setProperty("--wheel-angle", `${angle}deg`);
+    }
+
+    const steering = Math.abs(normalized) < 0.09 ? 0 : normalized;
+    mobileRef.current.left = steering < 0;
+    mobileRef.current.right = steering > 0;
+  };
+
+  const releaseSteering = () => {
+    pointerIdRef.current = null;
+    angleRef.current = 0;
+    mobileRef.current.left = false;
+    mobileRef.current.right = false;
+    if (wheelRef.current) {
+      wheelRef.current.style.setProperty("--wheel-angle", "0deg");
+    }
+  };
+
+  return (
+    <>
+      <style>{`
+        @media (pointer: coarse) and (orientation: landscape) {
+          .mobile-controls .control-left {
+            position: absolute !important;
+            left: max(18px, env(safe-area-inset-left)) !important;
+            right: auto !important;
+            bottom: max(16px, env(safe-area-inset-bottom)) !important;
+            top: auto !important;
+            width: clamp(112px, 19vh, 170px);
+            height: clamp(112px, 19vh, 170px);
+            display: block !important;
+            margin: 0 !important;
+            pointer-events: none !important;
+          }
+          .steering-wheel-control {
+            --wheel-angle: 0deg;
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            touch-action: none;
+            pointer-events: auto;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+          }
+          .steering-wheel-rim {
+            position: absolute;
+            inset: 5%;
+            border: clamp(9px, 1.6vh, 14px) solid rgba(22, 25, 30, .94);
+            border-radius: 50%;
+            box-shadow: 0 3px 12px rgba(0,0,0,.5),
+              inset 0 0 0 2px rgba(255,255,255,.35),
+              0 0 0 2px rgba(255,255,255,.55);
+            transform: rotate(var(--wheel-angle));
+            transition: transform 45ms linear;
+          }
+          .steering-wheel-spoke {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 11%;
+            height: 43%;
+            border-radius: 7px;
+            background: linear-gradient(90deg,#252a32,#68717c,#20252c);
+            transform-origin: 50% 0%;
+            box-shadow: 0 1px 4px rgba(0,0,0,.65);
+          }
+          .steering-wheel-spoke.left {
+            transform: translate(-50%, 0) rotate(55deg);
+          }
+          .steering-wheel-spoke.right {
+            transform: translate(-50%, 0) rotate(-55deg);
+          }
+          .steering-wheel-hub {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 30%;
+            height: 30%;
+            border: 2px solid rgba(255,255,255,.55);
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%,#59616c,#171b22 72%);
+            transform: translate(-50%,-50%);
+            box-shadow: 0 2px 8px rgba(0,0,0,.55);
+          }
+          .steering-wheel-mark {
+            position: absolute;
+            left: 50%;
+            top: 9%;
+            width: 9%;
+            height: 13%;
+            border-radius: 4px;
+            background: #e10600;
+            transform: translateX(-50%);
+          }
+          .steering-wheel-label {
+            position: absolute;
+            left: 50%;
+            bottom: -19px;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,.88);
+            font: 800 9px/1 Arial,sans-serif;
+            letter-spacing: 2px;
+            text-shadow: 0 2px 5px #000;
+            white-space: nowrap;
+          }
+        }
+        @media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
+          .mobile-controls .control-left {
+            width: 104px;
+            height: 104px;
+            left: max(10px, env(safe-area-inset-left)) !important;
+            bottom: max(9px, env(safe-area-inset-bottom)) !important;
+          }
+        }
+      `}</style>
+      <button
+        ref={wheelRef}
+        type="button"
+        className="steering-wheel-control"
+        aria-label="Steering wheel. Drag left or right to steer."
+        onPointerDown={(event) => {
+          event.preventDefault();
+          pointerIdRef.current = event.pointerId;
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {}
+          updateSteering(event);
+        }}
+        onPointerMove={(event) => {
+          if (pointerIdRef.current !== event.pointerId) return;
+          event.preventDefault();
+          updateSteering(event);
+        }}
+        onPointerUp={(event) => {
+          event.preventDefault();
+          if (pointerIdRef.current === event.pointerId) releaseSteering();
+        }}
+        onPointerCancel={releaseSteering}
+        onLostPointerCapture={releaseSteering}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        <span className="steering-wheel-rim">
+          <span className="steering-wheel-spoke left" />
+          <span className="steering-wheel-spoke right" />
+          <span className="steering-wheel-hub" />
+          <span className="steering-wheel-mark" />
+        </span>
+        <span className="steering-wheel-label">STEER</span>
+      </button>
+    </>
+  );
+}
+
 function TapButton({ label, keyName }) {
   return (
     <button
@@ -111,11 +290,6 @@ function TapButton({ label, keyName }) {
 }
 
 const TOUCH = {
-  left: [
-    ["◀", "left", "steer-btn"],
-    ["▶", "right", "steer-btn"],
-  ],
-
   right: [
     ["ERS", "ers", "mini-btn"],
     ["DRS", "drs", "mini-btn"],
@@ -546,19 +720,21 @@ export default function App() {
 
       <div className="mobile-controls">
 
-        {Object.entries(TOUCH).map(([side, buttons]) => (
-          <div key={side} className={`control-${side}`}>
-            {buttons.map(([label, field, cls]) => (
-              <ControlButton
-                key={label}
-                label={label}
-                field={field}
-                className={cls}
-                mobileRef={mobileRef}
-              />
-            ))}
-          </div>
-        ))}
+        <div className="control-left">
+          <SteeringWheel mobileRef={mobileRef} />
+        </div>
+
+        <div className="control-right">
+          {TOUCH.right.map(([label, field, cls]) => (
+            <ControlButton
+              key={label}
+              label={label}
+              field={field}
+              className={cls}
+              mobileRef={mobileRef}
+            />
+          ))}
+        </div>
 
         <div className="tap-group">
           <TapButton label="CAM" keyName="c" />
