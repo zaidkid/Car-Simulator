@@ -56,61 +56,6 @@ function SceneReady({ onReady }) {
 // MOBILE CONTROLS
 // --------------------------------------------------
 
-// Layout overrides for touch devices in landscape only.
-// GAS is large, BRAKE is smaller, with a wide gap between them.
-// ERS / DRS sit above GAS. Desktop is unaffected.
-const MOBILE_LAYOUT_CSS = `
-@media (pointer: coarse) and (orientation: landscape) {
-  .mobile-controls .control-right {
-    position: fixed !important;
-    inset: 0 !important;
-    display: block !important;
-    pointer-events: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  .mobile-controls .control-right .touch-control {
-    position: absolute !important;
-    pointer-events: auto !important;
-    margin: 0 !important;
-    touch-action: none;
-  }
-
-  /* GAS: big, bottom-right */
-  .mobile-controls .accelerate-btn {
-    width: clamp(110px, 36vh, 160px) !important;
-    height: clamp(110px, 36vh, 160px) !important;
-    right: max(16px, env(safe-area-inset-right)) !important;
-    bottom: max(14px, env(safe-area-inset-bottom)) !important;
-    font-size: 18px !important;
-    border-radius: 26px !important;
-  }
-
-  /* BRAKE: smaller, with a wide gap from GAS */
-  .mobile-controls .reverse-btn {
-    width: clamp(78px, 26vh, 112px) !important;
-    height: clamp(78px, 26vh, 112px) !important;
-    right: calc(max(16px, env(safe-area-inset-right)) + clamp(110px, 36vh, 160px) + 30px) !important;
-    bottom: max(14px, env(safe-area-inset-bottom)) !important;
-    border-radius: 22px !important;
-  }
-
-  /* ERS / DRS above GAS */
-  .mobile-controls .mini-btn {
-    width: 56px !important;
-    height: 56px !important;
-    bottom: calc(max(14px, env(safe-area-inset-bottom)) + clamp(110px, 36vh, 160px) + 14px) !important;
-  }
-  .mobile-controls .mini-btn:nth-child(2) { /* DRS */
-    right: max(16px, env(safe-area-inset-right)) !important;
-  }
-  .mobile-controls .mini-btn:nth-child(1) { /* ERS */
-    right: calc(max(16px, env(safe-area-inset-right)) + 56px + 14px) !important;
-  }
-}
-`;
-
 function ControlButton({ label, field, mobileRef, className = "" }) {
   const set = (on) => {
     mobileRef.current[field] = on;
@@ -142,251 +87,11 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
   );
 }
 
-function SteeringWheel({ mobileRef }) {
-  const wheelRef = useRef(null);
-  const pointerIdRef = useRef(null);
-  const startAngleRef = useRef(0);
-  const steerRef = useRef(0); // -1 (left) .. 1 (right)
-  const [wheelAngle, setWheelAngle] = useState(0);
-
-  const MAX_TURN = 90; // degrees of wheel rotation = full lock
-  const DEADZONE = 0.06;
-
-  const pointerAngle = (event) => {
-    const rect = wheelRef.current.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    return (
-      (Math.atan2(event.clientX - cx, -(event.clientY - cy)) * 180) / Math.PI
-    );
-  };
-
-  const updateSteering = (event) => {
-    if (!wheelRef.current) return;
-
-    let delta = pointerAngle(event) - startAngleRef.current;
-    if (delta > 180) delta -= 360;
-    if (delta < -180) delta += 360;
-
-    const clamped = Math.max(-MAX_TURN, Math.min(MAX_TURN, delta));
-    setWheelAngle(clamped * 1.5); // visual rotation
-
-    let s = clamped / MAX_TURN;
-    s = Math.abs(s) < DEADZONE ? 0 : Math.sign(s) * Math.pow(Math.abs(s), 1.35);
-    steerRef.current = s;
-  };
-
-  const releaseSteering = () => {
-    pointerIdRef.current = null;
-    steerRef.current = 0;
-    setWheelAngle(0);
-  };
-
-  // Turns the analog value into smooth left/right "pulses" per frame.
-  // Only writes to mobileRef while the wheel is in use, so keyboard still works.
-  useEffect(() => {
-    let raf;
-    let acc = 0;
-    let active = false;
-
-    const loop = () => {
-      const s = steerRef.current;
-      const m = mobileRef.current;
-
-      if (s === 0) {
-        if (active) {
-          m.left = false;
-          m.right = false;
-          active = false;
-          acc = 0;
-        }
-      } else {
-        active = true;
-        acc += Math.abs(s);
-        const on = acc >= 1;
-        if (on) acc -= 1;
-        m.left = on && s < 0;
-        m.right = on && s > 0;
-      }
-      raf = requestAnimationFrame(loop);
-    };
-
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [mobileRef]);
-
-  return (
-    <div className="steering-wheel-shell">
-      <style>{`
-        @media (pointer: coarse) and (orientation: landscape) {
-          .mobile-controls .control-left {
-            position:absolute!important;
-            left:max(16px,env(safe-area-inset-left))!important;
-            right:auto!important;
-            bottom:max(15px,env(safe-area-inset-bottom))!important;
-            top:auto!important;
-            width:clamp(132px,22vh,190px);
-            height:clamp(132px,22vh,190px);
-            display:block!important;
-            margin:0!important;
-            pointer-events:none!important;
-          }
-          .steering-wheel-shell {
-            position:absolute; inset:0; pointer-events:none;
-            filter:drop-shadow(0 7px 10px rgba(0,0,0,.55));
-          }
-          .steering-wheel-hit {
-            position:absolute; inset:0; width:100%; height:100%;
-            padding:0; border:0; background:transparent; border-radius:50%;
-            touch-action:none; pointer-events:auto;
-            -webkit-tap-highlight-color:transparent;
-          }
-          .steering-wheel-svg {
-            width:100%; height:100%; overflow:visible;
-            transform:rotate(var(--wheel-angle,0deg));
-            transform-origin:50% 50%;
-            transition:transform 55ms linear;
-          }
-          .steering-wheel-caption {
-            position:absolute; left:50%; bottom:-17px;
-            transform:translateX(-50%); color:#e8edf4;
-            font:900 8px/1 Arial,sans-serif; letter-spacing:2.2px;
-            white-space:nowrap; text-shadow:0 2px 5px #000;
-          }
-        }
-        @media (pointer:coarse) and (orientation:landscape) and (max-height:420px) {
-          .mobile-controls .control-left {
-            width:112px;height:112px;
-            left:max(9px,env(safe-area-inset-left))!important;
-            bottom:max(8px,env(safe-area-inset-bottom))!important;
-          }
-        }
-      `}</style>
-      <button
-        ref={wheelRef}
-        type="button"
-        className="steering-wheel-hit"
-        style={{ "--wheel-angle": `${wheelAngle}deg` }}
-        aria-label="Steering wheel. Twist to steer."
-        onPointerDown={(event) => {
-          event.preventDefault();
-          pointerIdRef.current = event.pointerId;
-          try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
-          startAngleRef.current = pointerAngle(event); // grab point = zero
-          setWheelAngle(0);
-        }}
-        onPointerMove={(event) => {
-          if (pointerIdRef.current !== event.pointerId) return;
-          event.preventDefault();
-          updateSteering(event);
-        }}
-        onPointerUp={(event) => {
-          event.preventDefault();
-          if (pointerIdRef.current === event.pointerId) releaseSteering();
-        }}
-        onPointerCancel={releaseSteering}
-        onLostPointerCapture={releaseSteering}
-        onContextMenu={(event) => event.preventDefault()}
-      >
-        <svg className="steering-wheel-svg" viewBox="0 0 240 240" role="img" aria-hidden="true">
-          <defs>
-            <linearGradient id="rimMetal" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#87909b"/>
-              <stop offset=".18" stopColor="#202630"/>
-              <stop offset=".48" stopColor="#080b10"/>
-              <stop offset=".78" stopColor="#3e4651"/>
-              <stop offset="1" stopColor="#090c11"/>
-            </linearGradient>
-            <linearGradient id="grip" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#303741"/>
-              <stop offset=".45" stopColor="#080a0e"/>
-              <stop offset="1" stopColor="#4a535e"/>
-            </linearGradient>
-            <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#24394a"/>
-              <stop offset="1" stopColor="#07121d"/>
-            </linearGradient>
-            <radialGradient id="hub" cx=".35" cy=".25">
-              <stop offset="0" stopColor="#596574"/>
-              <stop offset=".55" stopColor="#202833"/>
-              <stop offset="1" stopColor="#080b10"/>
-            </radialGradient>
-            <filter id="softGlow">
-              <feGaussianBlur stdDeviation="2.2" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-          </defs>
-
-          {/* Carbon-fibre outer rim and metallic inner edge */}
-          <circle cx="120" cy="120" r="103" fill="none" stroke="#030507" strokeWidth="25"/>
-          <circle cx="120" cy="120" r="103" fill="none" stroke="url(#rimMetal)" strokeWidth="20"/>
-          <circle cx="120" cy="120" r="92" fill="none" stroke="#07090d" strokeWidth="5"/>
-          <path d="M45 54 A103 103 0 0 1 195 54" fill="none" stroke="#aeb7c2" strokeWidth="1.5" opacity=".48"/>
-          {/* Ergonomic side grips */}
-          <path d="M29 76 Q8 120 35 164 L52 153 Q34 119 53 88Z" fill="url(#grip)" stroke="#69727e" strokeWidth="1.5"/>
-          <path d="M211 76 Q232 120 205 164 L188 153 Q206 119 187 88Z" fill="url(#grip)" stroke="#69727e" strokeWidth="1.5"/>
-          <path d="M26 100 l12 5 M24 116 l12 3 M26 132 l12 -2 M214 100 l-12 5 M216 116 l-12 3 M214 132 l-12 -2"
-            stroke="#8993a0" strokeWidth="2" opacity=".45" strokeLinecap="round"/>
-          {/* Three reinforced spokes */}
-          <path d="M108 133 L82 185 L105 193 L120 151 L135 193 L158 185 L132 133Z"
-            fill="url(#rimMetal)" stroke="#89929e" strokeWidth="1.2"/>
-          <path d="M108 111 L67 105 L62 124 L107 132Z M132 111 L173 105 L178 124 L133 132Z"
-            fill="url(#rimMetal)" stroke="#89929e" strokeWidth="1.2"/>
-          {/* Top shift LEDs */}
-          {Array.from({length: 10}, (_, i) => (
-            <rect key={i} x={82 + i * 8.4} y="24" width="6" height="5" rx="1.5"
-              fill={i < 3 ? "#19d66b" : i < 7 ? "#ffd12e" : "#ff3038"}
-              filter="url(#softGlow)" opacity=".95"/>
-          ))}
-          {/* Central display */}
-          <rect x="78" y="82" width="84" height="48" rx="7" fill="#05080c" stroke="#8994a1" strokeWidth="2"/>
-          <rect x="83" y="87" width="74" height="38" rx="4" fill="url(#screen)" stroke="#263c4d" strokeWidth="1"/>
-          <text x="120" y="103" textAnchor="middle" fill="#9db4c7" fontSize="7" fontWeight="700" letterSpacing="1.2">APEX RACING</text>
-          <text x="120" y="119" textAnchor="middle" fill="#f7fbff" fontSize="17" fontWeight="900">5 <tspan fill="#42e6a0" fontSize="7">GEAR</tspan></text>
-          {/* Controls and rotary dials */}
-          <circle cx="62" cy="91" r="10" fill="#c51d2a" stroke="#f27b82" strokeWidth="1.5"/>
-          <circle cx="178" cy="91" r="10" fill="#1769c5" stroke="#70b5ff" strokeWidth="1.5"/>
-          <circle cx="58" cy="145" r="8" fill="#e5b72c" stroke="#ffe68b" strokeWidth="1.2"/>
-          <circle cx="182" cy="145" r="8" fill="#24a76a" stroke="#83f3bd" strokeWidth="1.2"/>
-          <circle cx="88" cy="153" r="7" fill="#161d26" stroke="#9ba6b2" strokeWidth="1.5"/>
-          <circle cx="152" cy="153" r="7" fill="#161d26" stroke="#9ba6b2" strokeWidth="1.5"/>
-          <path d="M62 86v10 M57 91h10 M178 86v10 M173 91h10" stroke="#fff" strokeWidth="1.5" opacity=".8"/>
-          <path d="M58 141v8 M54 145h8 M182 141v8 M178 145h8" stroke="#fff" strokeWidth="1.3" opacity=".85"/>
-          {/* Centre badge */}
-          <circle cx="120" cy="165" r="19" fill="url(#hub)" stroke="#aeb8c3" strokeWidth="1.5"/>
-          <path d="M109 168 L120 149 L131 168 L120 163Z" fill="#e10600"/>
-          <text x="120" y="178" textAnchor="middle" fill="#fff" fontSize="5.5" fontWeight="900" letterSpacing=".8">APEX</text>
-        </svg>
-        <span className="steering-wheel-caption">TWIST TO STEER</span>
-      </button>
-    </div>
-  );
-}
-
-function TapButton({ label, keyName }) {
-  return (
-    <button
-      type="button"
-      className="touch-control"
-      onPointerDown={(e) => {
-        e.preventDefault();
-
-        window.dispatchEvent(
-          new KeyboardEvent("keydown", {
-            key: keyName,
-            code: keyName === "r" ? "KeyR" : "KeyC",
-            bubbles: true,
-          })
-        );
-      }}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      {label}
-    </button>
-  );
-}
-
 const TOUCH = {
+  left: [
+    ["◀", "left", "steer-btn"],
+    ["▶", "right", "steer-btn"],
+  ],
   right: [
     ["ERS", "ers", "mini-btn"],
     ["DRS", "drs", "mini-btn"],
@@ -816,10 +521,66 @@ export default function App() {
       {/* MOBILE CONTROLS */}
 
       <div className="mobile-controls">
-        <style>{MOBILE_LAYOUT_CSS}</style>
-
+        <style>{`
+          @media (pointer:coarse) and (orientation:landscape) {
+            .mobile-controls .control-left {
+              position:absolute!important; left:max(18px,env(safe-area-inset-left))!important;
+              right:auto!important; bottom:max(18px,env(safe-area-inset-bottom))!important;
+              top:auto!important; width:auto!important; height:auto!important;
+              display:flex!important; flex-direction:row!important; align-items:center!important;
+              justify-content:center!important; gap:clamp(18px,3vw,34px)!important;
+              margin:0!important; pointer-events:auto!important;
+            }
+            .mobile-controls .control-left .touch-control {
+              width:clamp(66px,12vh,94px)!important;
+              height:clamp(66px,12vh,94px)!important; min-width:0!important;
+              border-radius:50%!important; font-size:clamp(25px,4vh,34px)!important;
+              font-weight:900!important; touch-action:none!important;
+              box-shadow:0 5px 14px rgba(0,0,0,.5),inset 0 1px 2px rgba(255,255,255,.2)!important;
+            }
+            .mobile-controls .control-right {
+              position:absolute!important; right:max(18px,env(safe-area-inset-right))!important;
+              left:auto!important; bottom:max(18px,env(safe-area-inset-bottom))!important;
+              top:auto!important; width:auto!important; height:auto!important;
+              display:grid!important; grid-template-columns:auto auto!important;
+              grid-template-rows:auto auto!important; align-items:center!important;
+              justify-items:center!important; column-gap:clamp(14px,2.5vw,28px)!important;
+              row-gap:clamp(12px,2vh,20px)!important; margin:0!important;
+              pointer-events:auto!important;
+            }
+            .mobile-controls .control-right .mini-btn { grid-row:1!important; }
+            .mobile-controls .control-right .reverse-btn { grid-column:1!important; grid-row:2!important; }
+            .mobile-controls .control-right .accelerate-btn {
+              grid-column:2!important; grid-row:2!important;
+              width:clamp(82px,15vh,112px)!important;
+              height:clamp(82px,15vh,112px)!important;
+              font-size:clamp(15px,2.5vh,20px)!important;
+              font-weight:900!important; border-radius:50%!important;
+            }
+            .mobile-controls .control-right .reverse-btn {
+              width:clamp(70px,12vh,92px)!important;
+              height:clamp(70px,12vh,92px)!important;
+              font-size:clamp(13px,2.2vh,17px)!important;
+              font-weight:900!important; border-radius:50%!important;
+            }
+            .mobile-controls .control-right .mini-btn {
+              width:clamp(42px,7vh,54px)!important;
+              height:clamp(32px,5.5vh,42px)!important;
+              font-size:clamp(9px,1.6vh,12px)!important;
+            }
+          }
+          @media (pointer:coarse) and (orientation:landscape) and (max-height:420px) {
+            .mobile-controls .control-left { gap:16px!important; bottom:10px!important; }
+            .mobile-controls .control-left .touch-control { width:62px!important;height:62px!important; }
+            .mobile-controls .control-right { right:10px!important;bottom:10px!important;column-gap:12px!important;row-gap:9px!important; }
+            .mobile-controls .control-right .accelerate-btn { width:76px!important;height:76px!important; }
+            .mobile-controls .control-right .reverse-btn { width:64px!important;height:64px!important; }
+          }
+        `}</style>
         <div className="control-left">
-          <SteeringWheel mobileRef={mobileRef} />
+          {TOUCH.left.map(([label, field, cls]) => (
+            <ControlButton key={field} label={label} field={field} className={cls} mobileRef={mobileRef} />
+          ))}
         </div>
 
         <div className="control-right">
