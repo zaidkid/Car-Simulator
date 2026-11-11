@@ -775,145 +775,28 @@ body {
   }
 }
 
-
 /* =========================================================
-   ARCADE-STYLE STEERING AND PEDALS (LANDSCAPE ONLY)
-   Only driving controls are changed. All other UI is preserved.
+   MOBILE MINIMAP — RIGHT SIDE POSITION
+   Keeps the existing minimap design and moves only its position.
 ========================================================= */
+
 @media (pointer: coarse) and (orientation: landscape) {
-  .mobile-controls {
-    display: block;
-    position: fixed;
-    inset: 0;
-    padding: 0;
-    gap: 0;
-    pointer-events: none;
-    z-index: 60;
-  }
-  .mobile-controls .control-left,
-  .mobile-controls .control-right {
-    position: absolute;
-    inset: 0;
-    display: block;
-    margin: 0;
-    pointer-events: none;
-  }
-  .mobile-controls .control-left .steer-btn {
-    position: absolute;
-    top: 51%;
-    width: clamp(58px, 10vh, 88px);
-    height: clamp(58px, 10vh, 88px);
-    min-width: 0;
-    min-height: 0;
-    padding: 0;
-    transform: translateY(-50%);
-    border: 2px solid rgba(255,255,255,.52);
-    border-radius: 16px;
-    background: rgba(14,20,30,.42);
-    color: white;
-    font-size: clamp(30px, 5vh, 48px);
-    font-weight: 900;
-    text-shadow: 0 2px 8px rgba(0,0,0,.65);
-    pointer-events: auto;
-    touch-action: none;
-  }
-  .mobile-controls .control-left .steer-btn:first-child {
-    left: max(16px, env(safe-area-inset-left));
-  }
-  .mobile-controls .control-left .steer-btn:nth-child(2) {
-    right: max(16px, env(safe-area-inset-right));
-  }
-  .mobile-controls .control-left .steer-btn:active {
-    transform: translateY(-50%) scale(.94);
-    background: rgba(225,6,0,.58);
-  }
-  .mobile-controls .control-right .reverse-btn,
-  .mobile-controls .control-right .accelerate-btn {
-    position: absolute;
-    bottom: max(14px, env(safe-area-inset-bottom));
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: clamp(86px, 15vh, 140px);
-    height: clamp(64px, 11vh, 100px);
-    min-width: 0;
-    min-height: 0;
-    padding: 0;
-    border: 2px solid rgba(255,255,255,.55);
-    border-radius: 18px 18px 28px 28px;
-    color: #fff;
-    font-size: clamp(12px, 2vh, 17px);
-    font-weight: 900;
-    letter-spacing: 1px;
-    text-shadow: 0 2px 5px rgba(0,0,0,.55);
-    box-shadow: 0 6px 18px rgba(0,0,0,.3);
-    pointer-events: auto;
-    touch-action: none;
-  }
-  .mobile-controls .control-right .reverse-btn {
-    left: clamp(92px, 16vw, 210px);
-    background: repeating-linear-gradient(110deg,transparent 0 10px,rgba(255,255,255,.12) 10px 14px),rgba(180,43,52,.83);
-  }
-  .mobile-controls .control-right .accelerate-btn {
-    right: clamp(92px, 16vw, 210px);
-    background: repeating-linear-gradient(110deg,transparent 0 10px,rgba(255,255,255,.12) 10px 14px),rgba(0,140,83,.86);
-    border-color: rgba(150,255,203,.7);
-  }
-  .mobile-controls .control-right .reverse-btn:active,
-  .mobile-controls .control-right .accelerate-btn:active {
-    transform: scale(.95);
-    filter: brightness(1.18);
-  }
-  /* Keep ERS/DRS functional and visually secondary. */
-  .mobile-controls .control-right .mini-btn {
-    position: absolute;
-    bottom: max(22px, env(safe-area-inset-bottom));
-    width: clamp(38px, 6vh, 52px);
-    height: clamp(38px, 6vh, 52px);
-    min-width: 0;
-    min-height: 0;
-    border-radius: 50%;
-    pointer-events: auto;
-    touch-action: none;
-  }
-  .mobile-controls .control-right .mini-btn:first-child {
-    left: 50%;
-    transform: translateX(-115%);
-  }
-  .mobile-controls .control-right .mini-btn:nth-child(2) {
-    left: 50%;
-    transform: translateX(15%);
+  html .mm-wrap {
+    position: fixed !important;
+    top: 50% !important;
+    right: max(12px, env(safe-area-inset-right)) !important;
+    left: auto !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
+    z-index: 45 !important;
   }
 }
+
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
-  .mobile-controls .control-left .steer-btn {
-    width: 54px;
-    height: 54px;
-    font-size: 30px;
-  }
-  .mobile-controls .control-left .steer-btn:first-child {
-    left: max(9px, env(safe-area-inset-left));
-  }
-  .mobile-controls .control-left .steer-btn:nth-child(2) {
-    right: max(9px, env(safe-area-inset-right));
-  }
-  .mobile-controls .control-right .reverse-btn,
-  .mobile-controls .control-right .accelerate-btn {
-    width: 78px;
-    height: 56px;
-    bottom: max(8px, env(safe-area-inset-bottom));
-    font-size: 11px;
-  }
-  .mobile-controls .control-right .reverse-btn {
-    left: clamp(72px, 13vw, 115px);
-  }
-  .mobile-controls .control-right .accelerate-btn {
-    right: clamp(72px, 13vw, 115px);
-  }
-  .mobile-controls .control-right .mini-btn {
-    width: 34px;
-    height: 34px;
-    bottom: max(16px, env(safe-area-inset-bottom));
-    font-size: 9px;
+  html .mm-wrap {
+    top: 48% !important;
+    right: max(8px, env(safe-area-inset-right)) !important;
+    transform: translateY(-50%) scale(.88) !important;
+    transform-origin: right center;
   }
 }
