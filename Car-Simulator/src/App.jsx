@@ -1,10 +1,4 @@
-import {
-  Suspense,
-  useEffect,
-  useRef,
-  useState,
-  useMemo,
-} from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
 import { useGLTF, PerformanceMonitor } from "@react-three/drei";
@@ -93,26 +87,10 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
   );
 }
 
-function SteeringWheelModel({ angle }) {
-  const { scene } = useGLTF("/models/sports-steering-wheel.glb");
-  const model = useMemo(() => scene.clone(true), [scene]);
-
-  return (
-    <primitive
-      object={model}
-      rotation={[0, 0, THREE_DEG_TO_RAD * angle]}
-      scale={2.65}
-      position={[0, 0, 0]}
-    />
-  );
-}
-
-const THREE_DEG_TO_RAD = Math.PI / 180;
-
 function SteeringWheel({ mobileRef }) {
   const wheelRef = useRef(null);
   const pointerIdRef = useRef(null);
-  const [angle, setAngle] = useState(0);
+  const [wheelAngle, setWheelAngle] = useState(0);
 
   const updateSteering = (event) => {
     const element = wheelRef.current;
@@ -122,14 +100,10 @@ function SteeringWheel({ mobileRef }) {
     const centerX = rect.left + rect.width / 2;
     const normalized = Math.max(
       -1,
-      Math.min(1, (event.clientX - centerX) / (rect.width * 0.34))
+      Math.min(1, (event.clientX - centerX) / (rect.width * 0.38))
     );
 
-    const wheelAngle = normalized * 150;
-    setAngle(wheelAngle);
-
-    // Existing Car.jsx consumes left/right booleans. Keep that API intact.
-    // A small dead zone avoids accidental steering when the wheel is centred.
+    setWheelAngle(normalized * 145);
     const steering = Math.abs(normalized) < 0.07 ? 0 : normalized;
     mobileRef.current.left = steering < 0;
     mobileRef.current.right = steering > 0;
@@ -137,81 +111,68 @@ function SteeringWheel({ mobileRef }) {
 
   const releaseSteering = () => {
     pointerIdRef.current = null;
-    setAngle(0);
+    setWheelAngle(0);
     mobileRef.current.left = false;
     mobileRef.current.right = false;
   };
 
   return (
-    <>
+    <div className="steering-wheel-shell">
       <style>{`
         @media (pointer: coarse) and (orientation: landscape) {
           .mobile-controls .control-left {
-            position: absolute !important;
-            left: max(14px, env(safe-area-inset-left)) !important;
-            right: auto !important;
-            bottom: max(14px, env(safe-area-inset-bottom)) !important;
-            top: auto !important;
-            width: clamp(124px, 22vh, 184px);
-            height: clamp(124px, 22vh, 184px);
-            display: block !important;
-            margin: 0 !important;
-            pointer-events: none !important;
+            position:absolute!important;
+            left:max(16px,env(safe-area-inset-left))!important;
+            right:auto!important;
+            bottom:max(15px,env(safe-area-inset-bottom))!important;
+            top:auto!important;
+            width:clamp(132px,22vh,190px);
+            height:clamp(132px,22vh,190px);
+            display:block!important;
+            margin:0!important;
+            pointer-events:none!important;
           }
-          .steering-wheel-control {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            padding: 0;
-            border: 0;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(15,19,26,.22), rgba(5,8,13,.05) 68%, transparent 70%);
-            touch-action: none;
-            pointer-events: auto;
-            -webkit-tap-highlight-color: transparent;
-            user-select: none;
+          .steering-wheel-shell {
+            position:absolute; inset:0; pointer-events:none;
+            filter:drop-shadow(0 7px 10px rgba(0,0,0,.55));
           }
-          .steering-wheel-control canvas {
-            width: 100% !important;
-            height: 100% !important;
-            display: block;
-            pointer-events: none;
+          .steering-wheel-hit {
+            position:absolute; inset:0; width:100%; height:100%;
+            padding:0; border:0; background:transparent; border-radius:50%;
+            touch-action:none; pointer-events:auto;
+            -webkit-tap-highlight-color:transparent;
+          }
+          .steering-wheel-svg {
+            width:100%; height:100%; overflow:visible;
+            transform:rotate(var(--wheel-angle,0deg));
+            transform-origin:50% 50%;
+            transition:transform 55ms linear;
           }
           .steering-wheel-caption {
-            position: absolute;
-            left: 50%;
-            bottom: -15px;
-            transform: translateX(-50%);
-            color: rgba(255,255,255,.9);
-            font: 900 8px/1 Arial,sans-serif;
-            letter-spacing: 2px;
-            text-shadow: 0 2px 5px #000;
-            white-space: nowrap;
-            pointer-events: none;
+            position:absolute; left:50%; bottom:-17px;
+            transform:translateX(-50%); color:#e8edf4;
+            font:900 8px/1 Arial,sans-serif; letter-spacing:2.2px;
+            white-space:nowrap; text-shadow:0 2px 5px #000;
           }
         }
-        @media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
+        @media (pointer:coarse) and (orientation:landscape) and (max-height:420px) {
           .mobile-controls .control-left {
-            width: 108px;
-            height: 108px;
-            left: max(8px, env(safe-area-inset-left)) !important;
-            bottom: max(8px, env(safe-area-inset-bottom)) !important;
+            width:112px;height:112px;
+            left:max(9px,env(safe-area-inset-left))!important;
+            bottom:max(8px,env(safe-area-inset-bottom))!important;
           }
         }
       `}</style>
-
       <button
         ref={wheelRef}
         type="button"
-        className="steering-wheel-control"
+        className="steering-wheel-hit"
+        style={{ "--wheel-angle": `${wheelAngle}deg` }}
         aria-label="Steering wheel. Drag left or right to steer."
         onPointerDown={(event) => {
           event.preventDefault();
           pointerIdRef.current = event.pointerId;
-          try {
-            event.currentTarget.setPointerCapture(event.pointerId);
-          } catch {}
+          try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
           updateSteering(event);
         }}
         onPointerMove={(event) => {
@@ -227,25 +188,78 @@ function SteeringWheel({ mobileRef }) {
         onLostPointerCapture={releaseSteering}
         onContextMenu={(event) => event.preventDefault()}
       >
-        <Canvas
-          orthographic
-          camera={{ position: [0, 0, 5], zoom: 115, near: 0.1, far: 30 }}
-          gl={{ alpha: true, antialias: true, powerPreference: "low-power" }}
-          dpr={1}
-          onCreated={({ gl }) => {
-            gl.setClearColor(0x000000, 0);
-          }}
-        >
-          <ambientLight intensity={1.8} />
-          <directionalLight position={[2, 3, 5]} intensity={2.2} />
-          <directionalLight position={[-3, -2, 2]} intensity={0.8} />
-          <group rotation={[0, 0, THREE_DEG_TO_RAD * angle]}>
-            <SteeringWheelModel angle={0} />
-          </group>
-        </Canvas>
-        <span className="steering-wheel-caption">STEER</span>
+        <svg className="steering-wheel-svg" viewBox="0 0 240 240" role="img" aria-hidden="true">
+          <defs>
+            <linearGradient id="rimMetal" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#87909b"/>
+              <stop offset=".18" stopColor="#202630"/>
+              <stop offset=".48" stopColor="#080b10"/>
+              <stop offset=".78" stopColor="#3e4651"/>
+              <stop offset="1" stopColor="#090c11"/>
+            </linearGradient>
+            <linearGradient id="grip" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#303741"/>
+              <stop offset=".45" stopColor="#080a0e"/>
+              <stop offset="1" stopColor="#4a535e"/>
+            </linearGradient>
+            <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#24394a"/>
+              <stop offset="1" stopColor="#07121d"/>
+            </linearGradient>
+            <radialGradient id="hub" cx=".35" cy=".25">
+              <stop offset="0" stopColor="#596574"/>
+              <stop offset=".55" stopColor="#202833"/>
+              <stop offset="1" stopColor="#080b10"/>
+            </radialGradient>
+            <filter id="softGlow">
+              <feGaussianBlur stdDeviation="2.2" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          {/* Carbon-fibre outer rim and metallic inner edge */}
+          <circle cx="120" cy="120" r="103" fill="none" stroke="#030507" strokeWidth="25"/>
+          <circle cx="120" cy="120" r="103" fill="none" stroke="url(#rimMetal)" strokeWidth="20"/>
+          <circle cx="120" cy="120" r="92" fill="none" stroke="#07090d" strokeWidth="5"/>
+          <path d="M45 54 A103 103 0 0 1 195 54" fill="none" stroke="#aeb7c2" strokeWidth="1.5" opacity=".48"/>
+          {/* Ergonomic side grips */}
+          <path d="M29 76 Q8 120 35 164 L52 153 Q34 119 53 88Z" fill="url(#grip)" stroke="#69727e" strokeWidth="1.5"/>
+          <path d="M211 76 Q232 120 205 164 L188 153 Q206 119 187 88Z" fill="url(#grip)" stroke="#69727e" strokeWidth="1.5"/>
+          <path d="M26 100 l12 5 M24 116 l12 3 M26 132 l12 -2 M214 100 l-12 5 M216 116 l-12 3 M214 132 l-12 -2"
+            stroke="#8993a0" strokeWidth="2" opacity=".45" strokeLinecap="round"/>
+          {/* Three reinforced spokes */}
+          <path d="M108 133 L82 185 L105 193 L120 151 L135 193 L158 185 L132 133Z"
+            fill="url(#rimMetal)" stroke="#89929e" strokeWidth="1.2"/>
+          <path d="M108 111 L67 105 L62 124 L107 132Z M132 111 L173 105 L178 124 L133 132Z"
+            fill="url(#rimMetal)" stroke="#89929e" strokeWidth="1.2"/>
+          {/* Top shift LEDs */}
+          {Array.from({length: 10}, (_, i) => (
+            <rect key={i} x={82 + i * 8.4} y="24" width="6" height="5" rx="1.5"
+              fill={i < 3 ? "#19d66b" : i < 7 ? "#ffd12e" : "#ff3038"}
+              filter="url(#softGlow)" opacity=".95"/>
+          ))}
+          {/* Central display */}
+          <rect x="78" y="82" width="84" height="48" rx="7" fill="#05080c" stroke="#8994a1" strokeWidth="2"/>
+          <rect x="83" y="87" width="74" height="38" rx="4" fill="url(#screen)" stroke="#263c4d" strokeWidth="1"/>
+          <text x="120" y="103" textAnchor="middle" fill="#9db4c7" fontSize="7" fontWeight="700" letterSpacing="1.2">APEX RACING</text>
+          <text x="120" y="119" textAnchor="middle" fill="#f7fbff" fontSize="17" fontWeight="900">5 <tspan fill="#42e6a0" fontSize="7">GEAR</tspan></text>
+          {/* Controls and rotary dials */}
+          <circle cx="62" cy="91" r="10" fill="#c51d2a" stroke="#f27b82" strokeWidth="1.5"/>
+          <circle cx="178" cy="91" r="10" fill="#1769c5" stroke="#70b5ff" strokeWidth="1.5"/>
+          <circle cx="58" cy="145" r="8" fill="#e5b72c" stroke="#ffe68b" strokeWidth="1.2"/>
+          <circle cx="182" cy="145" r="8" fill="#24a76a" stroke="#83f3bd" strokeWidth="1.2"/>
+          <circle cx="88" cy="153" r="7" fill="#161d26" stroke="#9ba6b2" strokeWidth="1.5"/>
+          <circle cx="152" cy="153" r="7" fill="#161d26" stroke="#9ba6b2" strokeWidth="1.5"/>
+          <path d="M62 86v10 M57 91h10 M178 86v10 M173 91h10" stroke="#fff" strokeWidth="1.5" opacity=".8"/>
+          <path d="M58 141v8 M54 145h8 M182 141v8 M178 145h8" stroke="#fff" strokeWidth="1.3" opacity=".85"/>
+          {/* Centre badge */}
+          <circle cx="120" cy="165" r="19" fill="url(#hub)" stroke="#aeb8c3" strokeWidth="1.5"/>
+          <path d="M109 168 L120 149 L131 168 L120 163Z" fill="#e10600"/>
+          <text x="120" y="178" textAnchor="middle" fill="#fff" fontSize="5.5" fontWeight="900" letterSpacing=".8">APEX</text>
+        </svg>
+        <span className="steering-wheel-caption">DRAG TO STEER</span>
       </button>
-    </>
+    </div>
   );
 }
 
