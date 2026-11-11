@@ -10,17 +10,21 @@ import { curve } from "./Trackcurve";
 // TV camera towers, a far city skyline, brighter fresh palette, and a blimp
 // circling over the circuit.
 
+const PHONE =
+  typeof window !== "undefined" &&
+  window.matchMedia("(pointer: coarse)").matches;
+
 const TRACK_OFFSET = 34; // distance from the centre line to the ad wall area
 const BASE = 3; // grandstands start this far beyond TRACK_OFFSET
 const TILT = 0.13;
 
 const L = curve.getLength();
-const SEGMENTS = Math.round(L / 24);
+const SEGMENTS = Math.round(L / (PHONE ? 38 : 30));
 const LEN = (L / SEGMENTS) * 1.03;
 
 // Clearance check: distance to the nearest part of the track that is NOT nearby
 // along the lap, so nothing is built on top of another section of the circuit
-const N = 800;
+const N = PHONE ? 480 : 640;
 const trackPts = Array.from({ length: N }, (_, j) => curve.getPointAt(j / N));
 const farMin = (x, z, t) => {
   let m = Infinity;
@@ -73,7 +77,7 @@ const tex = (w, h, draw) => {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
+  t.anisotropy = PHONE ? 2 : 4;
   return t;
 };
 
@@ -275,10 +279,14 @@ const waveShader = (uTime) => (shader) => {
 function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = false, ...mat }) {
   const ref = useRef();
   const uTime = useMemo(() => ({ value: 0 }), []);
-  const onBeforeCompile = useMemo(() => (wave ? waveShader(uTime) : undefined), [wave, uTime]);
+  const animateWave = wave && !PHONE;
+  const onBeforeCompile = useMemo(
+    () => (animateWave ? waveShader(uTime) : undefined),
+    [animateWave, uTime]
+  );
 
   useFrame((_, delta) => {
-    if (wave) uTime.value += Math.min(delta, 0.1);
+    if (animateWave) uTime.value += Math.min(delta, 0.1);
   });
 
   useLayoutEffect(() => {
@@ -307,21 +315,21 @@ function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = fa
       ref={ref}
       key={items.length}
       args={[GEOS[geo], undefined, items.length]}
-      frustumCulled={false}
-      receiveShadow
-      castShadow={cast}
+      frustumCulled
+      receiveShadow={false}
+      castShadow={false}
     >
       <meshStandardMaterial
         {...mat}
         onBeforeCompile={onBeforeCompile}
-        customProgramCacheKey={() => (wave ? "stadium-wave" : "stadium-plain")}
+        customProgramCacheKey={() => (animateWave ? "stadium-wave" : "stadium-plain")}
       />
     </instancedMesh>
   );
 }
 
-// cast: true = this part throws shadows (the sun follows the car, so only the
-// area around it is ever drawn into the shadow map)
+// Stadium meshes are intentionally non-shadow-casting for stable frame times.
+ // Keep the cast metadata for compatibility with the existing material table.
 const MATS = {
   grass: { color: "#4a8f3e", roughness: 1 },
   adsP: { map: adTex(false), roughness: 0.35 },

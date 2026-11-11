@@ -4,8 +4,21 @@ import * as THREE from "three";
 
 import { telemetry } from "./Telemetry";
 
-// Press C to cycle: cockpit -> T-cam (airbox) -> chase
-const MODES = ["cockpit", "tcam", "chase"];
+// Camera views. Press C to cycle, or 1-8 to pick one (telemetry.camera holds the name).
+// first = eye position relative to the car (x right, y up, z forward): driver-style views.
+// dist / pitch / y / ahead / turn = third-person views (distance, angle, height, look-ahead, swing speed).
+const VIEWS = {
+  cockpit: { first: [0, 1.08, -0.18], fov: 72 }, // driver's eyes behind the halo
+  hood: { first: [0, 0.9, 1.3], fov: 78 }, // nose camera
+  tcam: { first: [0, 1.58, -0.9], fov: 68 }, // above the airbox
+  chase: { dist: 12, pitch: 0.22, fov: 65, y: 1.45, ahead: 7, turn: 6 },
+  far: { dist: 20, pitch: 0.3, fov: 60, y: 1.45, ahead: 9, turn: 4 },
+  low: { dist: 6.5, pitch: 0.07, fov: 72, y: 0.9, ahead: 10, turn: 8 },
+  top: { dist: 40, pitch: 1.35, fov: 50, y: 0.5, ahead: 6, turn: 2.5 },
+  orbit: { dist: 11, pitch: 0.2, fov: 55, y: 1.2, ahead: 0, turn: 4, orbit: true },
+};
+
+const MODES = Object.keys(VIEWS);
 const UP = new THREE.Vector3(0, 1, 0);
 
 export default function FollowCamera({ targetRef }) {
@@ -15,8 +28,8 @@ export default function FollowCamera({ targetRef }) {
 
   const yaw = useRef(null);
   const lookYaw = useRef(0);
-  const pitch = useRef(0.22);
-  const distance = useRef(12);
+  const pitchAdjust = useRef(0); // mouse-drag tilt, added to the view's own angle
+  const distanceAdjust = useRef(0); // mouse-wheel zoom, added to the view's own distance
   const dragging = useRef(false);
 
   const fov = useRef(72);
@@ -34,8 +47,20 @@ export default function FollowCamera({ targetRef }) {
   useEffect(() => {
     const element = gl.domElement;
 
+    const isThirdPerson = () => !VIEWS[mode.current].first;
+
+    const setMode = (name) => {
+      mode.current = name;
+      telemetry.camera = name;
+
+      lookYaw.current = 0;
+      pitchAdjust.current = 0;
+      distanceAdjust.current = 0;
+      yaw.current = null;
+    };
+
     const onDown = (event) => {
-      if (mode.current !== "chase" || event.button !== 0) return;
+      if (!isThirdPerson() || event.button !== 0) return;
 
       dragging.current = true;
       element.setPointerCapture?.(event.pointerId);
@@ -50,40 +75,35 @@ export default function FollowCamera({ targetRef }) {
     };
 
     const onMove = (event) => {
-      if (!dragging.current || mode.current !== "chase") return;
+      if (!dragging.current || !isThirdPerson()) return;
 
       lookYaw.current -= event.movementX * 0.004;
-
-      pitch.current = THREE.MathUtils.clamp(
-        pitch.current + event.movementY * 0.003,
-        0.06,
-        0.85
-      );
+      pitchAdjust.current += event.movementY * 0.003;
     };
 
     const onWheel = (event) => {
-      if (mode.current !== "chase") return;
+      if (!isThirdPerson()) return;
 
       event.preventDefault();
 
-      distance.current = THREE.MathUtils.clamp(
-        distance.current + event.deltaY * 0.008,
-        5,
-        20
+      distanceAdjust.current = THREE.MathUtils.clamp(
+        distanceAdjust.current + event.deltaY * 0.008,
+        -6,
+        12
       );
     };
 
     const onKeyDown = (event) => {
-      if (event.key.toLowerCase() === "c" && !event.repeat) {
-        const next =
-          (MODES.indexOf(mode.current) + 1) % MODES.length;
+      if (event.repeat) return;
 
-        mode.current = MODES[next];
-        telemetry.camera = mode.current;
+      const key = event.key.toLowerCase();
 
-        lookYaw.current = 0;
-        yaw.current = null;
+      if (key === "c") {
+        setMode(MODES[(MODES.indexOf(mode.current) + 1) % MODES.length]);
       }
+
+      const n = Number(key);
+      if (n >= 1 && n <= MODES.length) setMode(MODES[n - 1]);
     };
 
     telemetry.camera = mode.current;
@@ -118,6 +138,7 @@ export default function FollowCamera({ targetRef }) {
     time.current += dt;
 
     const t = time.current;
+    const view = VIEWS[mode.current];
     const speedRatio = THREE.MathUtils.clamp(
       telemetry.speed / 95,
       0,
@@ -179,21 +200,15 @@ export default function FollowCamera({ targetRef }) {
       amplitude *
       1.4;
 
-    let wantedFov = 72;
+    let wantedFov = view.fov;
 
-    if (mode.current === "cockpit" || mode.current === "tcam") {
-      const isCockpit = mode.current === "cockpit";
-
-      // Cockpit: driver's eyes behind the halo. T-cam: above the airbox.
-      const baseX = 0;
-      const baseY = isCockpit ? 1.08 : 1.58;
-      const baseZ = isCockpit ? -0.18 : -0.9;
-
+    if (view.first) {
+      // DRIVER-STYLE VIEWS (cockpit, hood, T-cam).
       localOffset.current
         .set(
-          baseX + lean.current.x + shakeX,
-          baseY + lean.current.y + shakeY,
-          baseZ + lean.current.z
+          view.first[0] + lean.current.x + shakeX,
+          view.first[1] + lean.current.y + shakeY,
+          view.first[2] + lean.current.z
         )
         .applyQuaternion(quaternion.current);
 
@@ -215,14 +230,12 @@ export default function FollowCamera({ targetRef }) {
       // Lean with the car in corners.
       camera.rotateZ(-telemetry.latG * 0.004);
 
-      wantedFov =
-        (isCockpit ? 72 : 68) +
+      wantedFov +=
         speedRatio * 12 +
         (telemetry.ers ? 3 : 0) +
         (telemetry.drs ? 2 : 0);
     } else {
-      // THIRD-PERSON CHASE CAMERA.
-
+      // THIRD-PERSON VIEWS (chase, far, low rear, top, orbit).
       const heading = Math.atan2(
         forward.current.x,
         forward.current.z
@@ -232,8 +245,10 @@ export default function FollowCamera({ targetRef }) {
         lookYaw.current *= Math.exp(-2.8 * dt);
       }
 
-      const wantedYaw =
-        heading + Math.PI + lookYaw.current;
+      // Orbit circles the car; every other view stays behind it.
+      const wantedYaw = view.orbit
+        ? t * 0.4 + lookYaw.current
+        : heading + Math.PI + lookYaw.current;
 
       if (yaw.current === null) {
         yaw.current = wantedYaw;
@@ -247,19 +262,27 @@ export default function FollowCamera({ targetRef }) {
       );
 
       yaw.current +=
-        difference * (1 - Math.exp(-6 * dt));
+        difference * (1 - Math.exp(-view.turn * dt));
 
-      target.current.y = p.y + 1.45;
+      target.current.y = p.y + view.y;
 
-      const horizontal = Math.cos(pitch.current);
+      const pitch = THREE.MathUtils.clamp(
+        view.pitch + pitchAdjust.current,
+        0.05,
+        1.45
+      );
+
+      const horizontal = Math.cos(pitch);
 
       // The camera pulls back a little at high speed.
-      const chaseDistance = distance.current + speedRatio * 2.5;
+      const chaseDistance =
+        THREE.MathUtils.clamp(view.dist + distanceAdjust.current, 4, 50) +
+        speedRatio * 2.5;
 
       desired.current
         .set(
           Math.sin(yaw.current) * horizontal,
-          Math.sin(pitch.current),
+          Math.sin(pitch),
           Math.cos(yaw.current) * horizontal
         )
         .multiplyScalar(chaseDistance)
@@ -277,13 +300,12 @@ export default function FollowCamera({ targetRef }) {
 
       lookAt.current
         .copy(target.current)
-        .addScaledVector(forward.current, 7);
+        .addScaledVector(forward.current, view.ahead);
 
       camera.up.set(0, 1, 0);
       camera.lookAt(lookAt.current);
 
-      wantedFov =
-        65 +
+      wantedFov +=
         speedRatio * 14 +
         (telemetry.ers ? 3 : 0) +
         (telemetry.drs ? 2 : 0);

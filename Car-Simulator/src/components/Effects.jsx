@@ -3,11 +3,7 @@ import {
   Bloom,
   Vignette,
   ToneMapping,
-  HueSaturation,
-  BrightnessContrast,
-  SMAA,
 } from "@react-three/postprocessing";
-
 import { ToneMappingMode } from "postprocessing";
 
 const PHONE =
@@ -23,60 +19,35 @@ const LOW_POWER =
   );
 
 export default function Effects() {
-  if (LOW_POWER) {
+  // Skip the post-processing pipeline on low-power phones.
+  // This avoids an extra full-screen render pass on constrained GPUs.
+  if (LOW_POWER) return null;
+
+  // Keep mobile effects deliberately light: no multisampling or bloom.
+  if (PHONE) {
     return (
       <EffectComposer multisampling={0}>
         <ToneMapping
-          mode={
-            ToneMappingMode.ACES_FILMIC ??
-            ToneMappingMode.NEUTRAL
-          }
+          mode={ToneMappingMode.ACES_FILMIC ?? ToneMappingMode.NEUTRAL}
         />
-
-        <Bloom
-          mipmapBlur
-          luminanceThreshold={1.25}
-          luminanceSmoothing={0.2}
-          intensity={0.18}
-        />
-
-        <Vignette
-          offset={0.42}
-          darkness={0.2}
-        />
+        <Vignette offset={0.44} darkness={0.16} />
       </EffectComposer>
     );
   }
 
+  // Desktop: retain the cinematic look with a single moderate bloom pass.
   return (
-    <EffectComposer multisampling={PHONE ? 2 : 0}>
+    <EffectComposer multisampling={0}>
       <ToneMapping
-        mode={
-          ToneMappingMode.ACES_FILMIC ??
-          ToneMappingMode.NEUTRAL
-        }
+        mode={ToneMappingMode.ACES_FILMIC ?? ToneMappingMode.NEUTRAL}
       />
-
       <Bloom
         mipmapBlur
-        luminanceThreshold={1.15}
-        luminanceSmoothing={0.18}
-        intensity={PHONE ? 0.24 : 0.32}
+        luminanceThreshold={1.2}
+        luminanceSmoothing={0.2}
+        intensity={0.22}
       />
-
-      <HueSaturation saturation={0.08} />
-
-      <BrightnessContrast
-        brightness={0.01}
-        contrast={0.045}
-      />
-
-      <Vignette
-        offset={0.4}
-        darkness={0.24}
-      />
-
-      {!PHONE && <SMAA />}
+      <Vignette offset={0.42} darkness={0.2} />
     </EffectComposer>
   );
 }

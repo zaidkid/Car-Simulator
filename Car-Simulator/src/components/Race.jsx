@@ -50,6 +50,17 @@ const PASS_CLEARANCE = 4.0;
 const LAT_LIMIT = TRACK_WIDTH - 1.35;
 const RUBBER_BAND = 0.05; // modest catch-up to keep the AI field competitive
 const RUBBER_RANGE = 190; // m of gap to the player at which rubber-banding is at full strength
+const JERK = 60; // m/s³ – how fast throttle/brake force can change
+
+// ---- Collision feel ----
+const HIT_TIME = 1.3; // s – player reaction to a hit is spread over this time
+const HIT_PUSH = 2.5; // m/s² peak sideways push on the player (eased in and out)
+const HIT_SLOW = 0.35; // peak speed-loss rate on the player (1/s)
+const AI_HIT_SLOW = 0.1; // fraction of pace an AI loses on contact (then recovers)
+const IMPACT_TIME = 3.0; // s – AI swerve/yaw lasts this long
+
+const TRACK_TINT = "#d8dce2"; // very light cool tint on asphalt/grass (cloudy day)
+const CAR_LIFT = 0.07; // lifts car models so wheels sit on top of the track layers
 
 const AI_COLORS = ["#3671ff", "#e10600", "#ff8700", "#e10600", "#00d2be"];
 const UP = new THREE.Vector3(0, 1, 0);
@@ -193,8 +204,8 @@ const both = (a, b, y, colorAt) => [makeStrip(a, b, y, colorAt), makeStrip(-b, -
 const white = new THREE.Color("#f4f4f4");
 const red = new THREE.Color("#d71920");
 const concrete = new THREE.Color("#3a3d44");
-const runoffColor = new THREE.Color("#55585e");
-const gravelColor = new THREE.Color("#b9a67f");
+const runoffColor = new THREE.Color("#438b43"); // green paved runoff
+const gravelColor = new THREE.Color("#2f7138"); // green grass verge
 
 // Asphalt in lateral bands: the middle is darker (rubbered-in racing line)
 const BANDS = [
@@ -307,11 +318,10 @@ function InstancedItems({ items, children }) {
     <instancedMesh
       ref={ref}
       args={[undefined, undefined, items.length]}
-      receiveShadow
       frustumCulled={false}
     >
       {children}
-      <meshStandardMaterial roughness={0.65} metalness={0.05} />
+      <meshBasicMaterial />
     </instancedMesh>
   );
 }
@@ -378,7 +388,7 @@ function StartLine({ lightMats }) {
         <meshBasicMaterial
           map={checkerTexture}
           polygonOffset
-          polygonOffsetFactor={-12}
+          polygonOffsetFactor={0}
           polygonOffsetUnits={-12}
         />
       </mesh>
@@ -390,7 +400,7 @@ function StartLine({ lightMats }) {
         </mesh>
       ))}
 
-      <mesh position={[0, 8.4, 0]} castShadow>
+      <mesh position={[0, 8.4, 0]}>
         <boxGeometry args={[29, 1.4, 1.4]} />
         <meshStandardMaterial color="#1a1c22" roughness={0.5} />
       </mesh>
@@ -462,6 +472,11 @@ function resetDriver(o, index, pace) {
     // grid
     distance: -(index + 1) * GRID_GAP,
     speed: 0,
+    acc: 0,
+    mult: 1,
+    slow: 0,
+    yaw: undefined,
+    prevLat: undefined,
     laneOffset: 0,
     lat: o.lane,
     finishTime: null,
@@ -556,6 +571,7 @@ function buildFinalClassification({ state, opponents }) {
 export default function Race({ carRef, hudRef, paused = false }) {
   const { scene } = useGLTF("/models/Red_bull_car.glb");
   const lightMats = useRef([]);
+  const hitRef = useRef({ t: 0, x: 0, z: 0 });
 
   // AI OPPONENTS
   const opponents = useMemo(() => {
@@ -587,6 +603,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
   const race = useRef({
     phase: "ready",
     distance: PLAYER_START_DISTANCE,
+    along: null,
     sampleIndex: Math.round(startT * SAMPLES) % SAMPLES,
     completedLaps: 0,
     elapsed: 0,
@@ -626,9 +643,13 @@ export default function Race({ carRef, hudRef, paused = false }) {
     const dz = playerPosition.z - aiPosition.z;
 
     opponent.impactDirection = dx * aiRight.x + dz * aiRight.z >= 0 ? -1 : 1;
-    opponent.impactTimer = 1.5;
-    opponent.collisionCooldown = 0.55;
-    opponent.speed *= 0.72;
+    opponent.impactTimer = IMPACT_TIME;
+    opponent.collisionCooldown = 0.8;
+    opponent.slow = Math.max(opponent.slow, AI_HIT_SLOW); // eased out, no instant speed cut
+
+    // Player gets a gentle push away from the AI car, spread over HIT_TIME
+    const len = Math.hypot(dx, dz) || 1;
+    hitRef.current = { t: HIT_TIME, x: dx / len, z: dz / len };
 
     // Hitting a car from behind at speed = 5 second penalty
     const v = playerBody.linvel();
@@ -684,6 +705,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
 
       Object.assign(state, {
         distance: PLAYER_START_DISTANCE,
+        along: null,
         sampleIndex: Math.round(startT * SAMPLES) % SAMPLES,
         completedLaps: 0,
         elapsed: 0,
@@ -703,6 +725,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
       });
 
       raceInfo.message = "";
+      hitRef.current.t = 0;
       raceInfo.results = null;
       raceInfo.lapTimes = []; // MOBILE-FIX (A)
       raceInfo.topSpeed = 0; // MOBILE-FIX (A)
@@ -757,6 +780,21 @@ export default function Race({ carRef, hudRef, paused = false }) {
     const racing = running && grid.go && state.finishTime === null;
 
     state.elapsed += dt;
+
+    // Player collision reaction: smooth push + speed loss (sin curve = eased in and out)
+    const hit = hitRef.current;
+    if (hit.t > 0) {
+      const f = Math.sin(Math.PI * (hit.t / HIT_TIME));
+      const m = body.mass?.() ?? 1;
+      const push = HIT_PUSH * f * m * dt;
+      body.applyImpulse({ x: hit.x * push, y: 0, z: hit.z * push }, true);
+
+      const v = body.linvel();
+      const k = Math.max(0, 1 - HIT_SLOW * f * dt);
+      body.setLinvel({ x: v.x * k, y: v.y, z: v.z * k }, true);
+
+      hit.t = Math.max(0, hit.t - dt);
+    }
 
     // Player speed (needed by the AI so it can react to the player's car)
     const lv = body.linvel();
@@ -855,11 +893,12 @@ export default function Race({ carRef, hudRef, paused = false }) {
           // Refresh at 10 Hz, then smoothly follow the new target speed.
           o.brakeTargetTimer -= dt;
           if (o.brakeTargetTimer <= 0) {
+            // Braking ramps up (jerk limit), so plan earlier than the raw brake force allows.
             o.brakeTarget = brakingTarget(
               o.distance,
               o.maxSpeed,
               o.gripScale,
-              AI_BRAKE,
+              AI_BRAKE * 0.7,
             );
             o.brakeTargetTimer = 0.08;
           }
@@ -883,20 +922,26 @@ export default function Race({ carRef, hudRef, paused = false }) {
             tow = THREE.MathUtils.clamp(1 - blockGap / PASS_LOOKAHEAD, 0, 1);
           }
 
-          target *= o.form * rubber * mistakeScale * (1 + 0.045 * tow);
-          target = Math.min(target, o.maxSpeed * 1.08);
+          // Smooth the speed multipliers so mistakes/slipstream don't snap the pace
+          o.mult = THREE.MathUtils.damp(
+            o.mult,
+            o.form * rubber * mistakeScale * (1 + 0.045 * tow),
+            3,
+            dt
+          );
+          o.slow = THREE.MathUtils.damp(o.slow, 0, 0.9, dt);
+          target = Math.min(target * o.mult * (1 - o.slow), o.maxSpeed * 1.08);
 
           // Stuck right behind a car in the same line: match its speed until there is room to pass
           if (blocker && blockGap < 8 && o.passSide === 0 && Math.abs(blocker.lat - o.lat) < 2.0) {
             target = Math.min(target, Math.max(0, blocker.speed + (blockGap - 6) * 0.8));
           }
 
-          if (o.speed > target) {
-            o.speed = Math.max(target, o.speed - AI_BRAKE * dt);
-          } else {
-            const acceleration = THREE.MathUtils.clamp(10.5 - 0.060 * o.speed, 4.5, 10.0) * o.power;
-            o.speed = Math.min(target, o.speed + acceleration * dt);
-          }
+          // Jerk-limited throttle/brake controller
+          const maxAcc = THREE.MathUtils.clamp(10.5 - 0.06 * o.speed, 4.5, 10) * o.power;
+          const want = THREE.MathUtils.clamp((target - o.speed) * 2.5, -AI_BRAKE, maxAcc);
+          o.acc += THREE.MathUtils.clamp(want - o.acc, -JERK * dt, JERK * dt);
+          o.speed = Math.max(0, o.speed + o.acc * dt);
 
           o.distance += o.speed * dt;
 
@@ -907,10 +952,10 @@ export default function Race({ carRef, hudRef, paused = false }) {
       o.impactTimer = Math.max(0, o.impactTimer - dt);
       o.collisionCooldown = Math.max(0, o.collisionCooldown - dt);
 
-      const impact = THREE.MathUtils.smoothstep(o.impactTimer, 0, 1.5);
+      const impact = THREE.MathUtils.smoothstep(o.impactTimer, 0, IMPACT_TIME);
 
-      o.impactOffset = THREE.MathUtils.damp(o.impactOffset, o.impactDirection * 2.1 * impact, 3.2, dt);
-      o.impactYaw = THREE.MathUtils.damp(o.impactYaw, o.impactDirection * 0.24 * impact, 3.2, dt);
+      o.impactOffset = THREE.MathUtils.damp(o.impactOffset, o.impactDirection * 2.1 * impact, 1.2, dt);
+      o.impactYaw = THREE.MathUtils.damp(o.impactYaw, o.impactDirection * 0.24 * impact, 1.2, dt);
 
       // Racing line: use a stronger, smoother corner entry/exit line.
       const k = curvature[Math.floor(wrap(o.distance) / DS) % SAMPLES];
@@ -951,7 +996,14 @@ export default function Race({ carRef, hudRef, paused = false }) {
       o.lat = lateral;
 
       const { x, z, yaw: baseYaw } = laneXZ(o.distance, lateral);
-      const yaw = baseYaw + o.impactYaw;
+
+      // Heading follows the sideways motion and is smoothed
+      const latRate = (lateral - (o.prevLat ?? lateral)) / Math.max(dt, 1e-3);
+      o.prevLat = lateral;
+      const wanted = baseYaw + o.impactYaw - Math.atan2(latRate, Math.max(o.speed, 10));
+      o.yaw ??= wanted;
+      o.yaw += Math.atan2(Math.sin(wanted - o.yaw), Math.cos(wanted - o.yaw)) * (1 - Math.exp(-10 * dt));
+      const yaw = o.yaw;
 
       const mc =
         mapCars[oi + 1] ||
@@ -985,6 +1037,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
       state.resetToken = track.resetToken;
       state.sampleIndex = Math.round(startT * SAMPLES) % SAMPLES;
       state.distance = state.completedLaps * TRACK_LENGTH + PLAYER_START_DISTANCE;
+      state.along = null;
       state.sector = 1;
       state.sectorStart = state.elapsed;
     }
@@ -1015,8 +1068,14 @@ export default function Race({ carRef, hudRef, paused = false }) {
     if (sampleDelta > SAMPLES / 2) sampleDelta -= SAMPLES;
     if (sampleDelta < -SAMPLES / 2) sampleDelta += SAMPLES;
 
+    // Sub-sample distance: add the car's offset along the tangent so distance
+    // (gaps, rubber banding, leaderboard) changes continuously, not in ~DS steps.
     if (running && state.finishTime === null) {
-      state.distance += (sampleDelta / SAMPLES) * TRACK_LENGTH;
+      const t = tangents[nearestIndex];
+      const along =
+        (position.x - points[nearestIndex].x) * t.x + (position.z - points[nearestIndex].z) * t.z;
+      state.distance += sampleDelta * DS + (along - (state.along ?? along));
+      state.along = along;
     }
 
     state.sampleIndex = nearestIndex;
@@ -1207,14 +1266,15 @@ export default function Race({ carRef, hudRef, paused = false }) {
   return (
     <>
       {trackMeshes.map((geometry, index) => (
-        <mesh key={index} geometry={geometry} receiveShadow>
-          <meshStandardMaterial
+        <mesh key={index} geometry={geometry}>
+          <meshBasicMaterial
             vertexColors
+            color={TRACK_TINT}
             side={THREE.DoubleSide}
-            roughness={0.92}
             polygonOffset
-            polygonOffsetFactor={-index - 1}
+            polygonOffsetFactor={0}
             polygonOffsetUnits={-index - 1}
+            toneMapped={false}
           />
         </mesh>
       ))}
@@ -1252,8 +1312,10 @@ export default function Race({ carRef, hudRef, paused = false }) {
             enabledRotations={[false, true, false]}
             canSleep={false}
           >
-            <CuboidCollider args={[1.03, 0.42, 2.7]} friction={0.9} restitution={0.02} />
-            <primitive object={o.object} />
+            <CuboidCollider args={[1.03, 0.42, 2.7]} friction={0.4} restitution={0} />
+            <group position={[0, CAR_LIFT, 0]}>
+              <primitive object={o.object} />
+            </group>
           </RigidBody>
         );
       })}

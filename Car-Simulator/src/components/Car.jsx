@@ -1,5 +1,5 @@
 import { RigidBody, CuboidCollider } from "@react-three/rapier";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
@@ -52,6 +52,17 @@ const CAR = {
   ersRecharge: 3,
   ersBrakeRecharge: 12,
 };
+
+// ---- Collision feel ----
+const COLLISION_TIME = 2.2; // s – spin and slowdown after a car hit, eased in and out
+const COLLISION_DRAG = 0.15; // peak speed-loss rate after a car hit (1/s)
+const WALL_DRAG = 0.6; // speed-loss rate right after a wall hit (1/s), fades out
+// Contact smoothing: a sudden velocity change from physics (car-to-car hit) is absorbed
+// and fed back in gradually instead of being applied in a single frame.
+const CONTACT_KICK = 1.0; // m/s change in one frame that counts as a hit
+const CONTACT_EASE = 4; // how fast the absorbed hit is released (1/s, lower = softer)
+const CONTACT_MAX = 25; // m/s cap on the stored hit
+const CAR_LIFT = 0.07; // lifts the car model so wheels sit on top of the track layers
 
 const SURFACE = {
   track: {
@@ -108,42 +119,10 @@ const recolorLivery = (m) => {
 };
 
 // ==========================================
-// SPARK EFFECT
-// ==========================================
-
-function SparkBurst({ position, onDone }) {
-  const ref = useRef();
-  const age = useRef(0);
-
-  useFrame((_, delta) => {
-    age.current += delta;
-
-    if (ref.current) {
-      ref.current.scale.setScalar(1 + age.current * 3);
-      ref.current.material.opacity = Math.max(0, 1 - age.current / 0.35);
-    }
-
-    if (age.current > 0.35) onDone();
-  });
-
-  return (
-    <mesh ref={ref} position={position}>
-      <sphereGeometry args={[0.12, 8, 8]} />
-      <meshBasicMaterial
-        color="#ffb000"
-        transparent
-        depthWrite={false}
-        toneMapped={false}
-      />
-    </mesh>
-  );
-}
-
-// ==========================================
 // MAIN CAR COMPONENT
 // ==========================================
 
-export default function Car({ carRef, mobileRef, hudRef }) {
+export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   const gltf = useGLTF(F1_CAR_URL);
   const modelRef = useRef();
 
@@ -165,7 +144,9 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   }, [actions]);
 
   const keys = useRef({});
-  const [sparks, setSparks] = useState([]);
+  // One reusable spark mesh: collisions no longer trigger React state updates.
+  const sparkRef = useRef(null);
+  const sparkAge = useRef(1);
 
   const engine = useRef(null);
   const horn = useRef(null);
@@ -180,7 +161,11 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   const collisionState = useRef({
     timer: 0,
     spin: 0,
+    wall: 0,
   });
+
+  // Absorbed contact velocity (see CONTACT_*): last velocity we set + pending hit
+  const contact = useRef({ init: false, lx: 0, lz: 0, px: 0, pz: 0 });
 
   // ==========================================
   // DRIVING STATE
@@ -253,6 +238,8 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     collisionState.current.timer = 0;
     collisionState.current.spin = 0;
+    collisionState.current.wall = 0;
+    contact.current = { init: false, lx: 0, lz: 0, px: 0, pz: 0 };
 
     keys.current = {};
 
@@ -423,14 +410,12 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   const addSparks = (now) => {
     const p = carRef.current?.translation();
 
-    if (p) {
-      setSparks((items) => [
-        ...items,
-        {
-          id: now,
-          position: [p.x, p.y + 0.4, p.z],
-        },
-      ]);
+    if (p && sparkRef.current) {
+      sparkRef.current.position.set(p.x, p.y + 0.4, p.z);
+      sparkRef.current.scale.setScalar(1);
+      sparkRef.current.material.opacity = 1;
+      sparkRef.current.visible = true;
+      sparkAge.current = 0;
     }
 
     if (crashAudio.current) {
@@ -487,10 +472,11 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       ? Math.hypot(impactVelocity.x, impactVelocity.z)
       : 0;
 
-    collisionState.current.timer = 1.15;
+    collisionState.current.timer = COLLISION_TIME;
 
+    // Gentler peak spin; it is eased in and out over COLLISION_TIME.
     collisionState.current.spin =
-      spinDirection * THREE.MathUtils.clamp(impactSpeed / 75, 0.12, 0.48);
+      spinDirection * THREE.MathUtils.clamp(impactSpeed / 160, 0.06, 0.22);
 
     game.crash();
     addSparks(now);
@@ -501,6 +487,25 @@ export default function Car({ carRef, mobileRef, hudRef }) {
   // ==========================================
 
   useFrame((state, delta) => {
+    // Update the short-lived spark without mounting/unmounting React components.
+    if (sparkRef.current && sparkAge.current < 0.35) {
+      sparkAge.current += delta;
+      const t = Math.min(1, sparkAge.current / 0.35);
+      sparkRef.current.scale.setScalar(1 + t * 2.5);
+      sparkRef.current.material.opacity = 1 - t;
+      if (t >= 1) sparkRef.current.visible = false;
+    }
+
+    if (paused) {
+      if (engine.current && !engine.current.paused) {
+        engine.current.pause();
+        engine.current.currentTime = 0;
+      }
+      if (skid.current) skid.current.gain.gain.value = 0;
+      contact.current.init = false;
+      return;
+    }
+
     const body = carRef.current;
 
     if (!body) return;
@@ -547,8 +552,14 @@ export default function Car({ carRef, mobileRef, hudRef }) {
     const collision = collisionState.current;
 
     collision.timer = Math.max(0, collision.timer - dt);
+    collision.wall = THREE.MathUtils.damp(collision.wall, 0, 2.5, dt);
 
-    const collisionBlend = THREE.MathUtils.smoothstep(collision.timer, 0, 1.15);
+    // Bell curve 0 -> 1 -> 0 over COLLISION_TIME: spin and slowdown ease in and out
+    // instead of kicking in at full strength on the first frame.
+    const collisionBlend =
+      collision.timer > 0
+        ? Math.sin(Math.PI * (collision.timer / COLLISION_TIME))
+        : 0;
 
     // ==========================================
     // INPUT
@@ -577,7 +588,32 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     forward.current.set(0, 0, 1).applyQuaternion(rotation.current).normalize();
 
-    const current = body.linvel();
+    const raw = body.linvel();
+
+    const current = { x: raw.x, y: raw.y, z: raw.z };
+
+    // Nothing but a contact can change our horizontal velocity between frames, so a
+    // sudden change is a hit: keep our previous velocity and release the hit gradually.
+    const ct = contact.current;
+
+    if (ct.init) {
+      const dx = current.x - ct.lx;
+      const dz = current.z - ct.lz;
+
+      if (Math.hypot(dx, dz) > CONTACT_KICK) {
+        ct.px += dx;
+        ct.pz += dz;
+        current.x = ct.lx;
+        current.z = ct.lz;
+      }
+    }
+
+    const pending = Math.hypot(ct.px, ct.pz);
+
+    if (pending > CONTACT_MAX) {
+      ct.px *= CONTACT_MAX / pending;
+      ct.pz *= CONTACT_MAX / pending;
+    }
 
     velocity.current.set(current.x, 0, current.z);
 
@@ -733,7 +769,10 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
     nextForwardSpeed = Math.max(nextForwardSpeed, -CAR.reverseSpeed);
 
-    nextForwardSpeed *= Math.exp(-1.2 * collisionBlend * dt);
+    // Smooth slowdown after hits (car hit: bell curve, wall hit: fading)
+    nextForwardSpeed *= Math.exp(
+      -(COLLISION_DRAG * collisionBlend + WALL_DRAG * collision.wall) * dt,
+    );
 
     // ==========================================
     // LATERAL GRIP
@@ -747,6 +786,16 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       .copy(forward.current)
       .multiplyScalar(nextForwardSpeed)
       .add(lateral.current);
+
+    // Release the absorbed hit a little each frame
+    const release = 1 - Math.exp(-CONTACT_EASE * dt);
+    const rx = ct.px * release;
+    const rz = ct.pz * release;
+
+    ct.px -= rx;
+    ct.pz -= rz;
+    velocity.current.x += rx;
+    velocity.current.z += rz;
 
     // ==========================================
     // STEERING
@@ -797,25 +846,28 @@ export default function Car({ carRef, mobileRef, hudRef }) {
         (velocity.current.x * n.x + velocity.current.z * n.z) * side;
 
       if (outward > 0) {
-        velocity.current.x -= n.x * side * outward * 1.35;
+        // Remove the outward speed with only a small bounce (was 1.35)
+        velocity.current.x -= n.x * side * outward * 1.1;
 
-        velocity.current.z -= n.z * side * outward * 1.35;
-
-        velocity.current.multiplyScalar(0.8);
+        velocity.current.z -= n.z * side * outward * 1.1;
 
         const now = performance.now();
 
         if (now - lastWall.current > 700) {
           lastWall.current = now;
 
+          collision.wall = 1; // speed loss fades out via WALL_DRAG instead of an instant x0.8
           game.crash();
           addSparks(now);
+        } else {
+          collision.wall = Math.max(collision.wall, 0.3); // light drag while scraping
         }
       }
 
       const p = body.translation();
 
-      const push = Math.abs(offset) - wallLimit;
+      // Ease the car back inside the wall instead of snapping it
+      const push = (Math.abs(offset) - wallLimit) * Math.min(1, 15 * dt);
 
       body.setTranslation(
         {
@@ -839,6 +891,10 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       },
       true,
     );
+
+    ct.lx = velocity.current.x;
+    ct.lz = velocity.current.z;
+    ct.init = true;
 
     body.setAngvel(
       {
@@ -932,6 +988,7 @@ export default function Car({ carRef, mobileRef, hudRef }) {
       );
 
       visual.position.y =
+        CAR_LIFT +
         Math.sin(state.clock.elapsedTime * 70) *
         0.004 *
         speedRatio *
@@ -1054,6 +1111,17 @@ export default function Car({ carRef, mobileRef, hudRef }) {
 
   return (
     <>
+      <mesh ref={sparkRef} visible={false} renderOrder={20}>
+        <sphereGeometry args={[0.12, 8, 8]} />
+        <meshBasicMaterial
+          color="#ffb000"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+
       <RigidBody
         ref={carRef}
         name="player-car"
@@ -1071,23 +1139,13 @@ export default function Car({ carRef, mobileRef, hudRef }) {
           args={[1.03, 0.42, 2.7]}
           friction={0}
           frictionCombineRule={1}
-          restitution={0.02}
+          restitution={0}
         />
 
-        <group ref={modelRef}>
+        <group ref={modelRef} position={[0, CAR_LIFT, 0]}>
           <primitive object={model} />
         </group>
       </RigidBody>
-
-      {sparks.map((spark) => (
-        <SparkBurst
-          key={spark.id}
-          position={spark.position}
-          onDone={() =>
-            setSparks((items) => items.filter((item) => item.id !== spark.id))
-          }
-        />
-      ))}
     </>
   );
 }

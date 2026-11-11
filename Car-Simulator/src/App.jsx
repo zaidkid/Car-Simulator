@@ -498,7 +498,7 @@ export default function App() {
   const [paused, setPaused] = useState(false);
 
   const [dpr, setDpr] = useState(
-    PHONE ? 1.1 : 1.35
+    PHONE ? 0.85 : 1.1
   );
 
   // Keyboard controls
@@ -585,7 +585,7 @@ export default function App() {
   return (
     <main className="app-shell">
       <Canvas
-        shadows={!PHONE}
+        shadows={false}
         dpr={dpr}
         gl={{
           antialias: false,
@@ -605,16 +605,16 @@ export default function App() {
         <PerformanceMonitor
           onDecline={() => {
             setDpr((d) =>
-              Math.max(PHONE ? 0.8 : 1, d - 0.15)
+              Math.max(PHONE ? 0.65 : 0.75, d - 0.15)
             );
           }}
           onIncline={() => {
             setDpr((d) =>
-              Math.min(PHONE ? 1.35 : 1.65, d + 0.1)
+              Math.min(PHONE ? 1.0 : 1.25, d + 0.1)
             );
           }}
           onFallback={() =>
-            setDpr(PHONE ? 0.85 : 1)
+            setDpr(PHONE ? 0.7 : 0.8)
           }
         />
 
