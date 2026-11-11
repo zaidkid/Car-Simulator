@@ -87,10 +87,26 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
   );
 }
 
+function SteeringWheelModel({ angle }) {
+  const { scene } = useGLTF("/models/sports-steering-wheel.glb");
+  const model = useMemo(() => scene.clone(true), [scene]);
+
+  return (
+    <primitive
+      object={model}
+      rotation={[0, 0, THREE_DEG_TO_RAD * angle]}
+      scale={2.65}
+      position={[0, 0, 0]}
+    />
+  );
+}
+
+const THREE_DEG_TO_RAD = Math.PI / 180;
+
 function SteeringWheel({ mobileRef }) {
   const wheelRef = useRef(null);
   const pointerIdRef = useRef(null);
-  const angleRef = useRef(0);
+  const [angle, setAngle] = useState(0);
 
   const updateSteering = (event) => {
     const element = wheelRef.current;
@@ -103,27 +119,21 @@ function SteeringWheel({ mobileRef }) {
       Math.min(1, (event.clientX - centerX) / (rect.width * 0.34))
     );
 
-    // Rotate the visual wheel and translate its position into smooth,
-    // progressive left/right steering using the existing Car input fields.
-    const angle = normalized * 135;
-    angleRef.current = angle;
-    if (wheelRef.current) {
-      wheelRef.current.style.setProperty("--wheel-angle", `${angle}deg`);
-    }
+    const wheelAngle = normalized * 150;
+    setAngle(wheelAngle);
 
-    const steering = Math.abs(normalized) < 0.09 ? 0 : normalized;
+    // Existing Car.jsx consumes left/right booleans. Keep that API intact.
+    // A small dead zone avoids accidental steering when the wheel is centred.
+    const steering = Math.abs(normalized) < 0.07 ? 0 : normalized;
     mobileRef.current.left = steering < 0;
     mobileRef.current.right = steering > 0;
   };
 
   const releaseSteering = () => {
     pointerIdRef.current = null;
-    angleRef.current = 0;
+    setAngle(0);
     mobileRef.current.left = false;
     mobileRef.current.right = false;
-    if (wheelRef.current) {
-      wheelRef.current.style.setProperty("--wheel-angle", "0deg");
-    }
   };
 
   return (
@@ -132,18 +142,17 @@ function SteeringWheel({ mobileRef }) {
         @media (pointer: coarse) and (orientation: landscape) {
           .mobile-controls .control-left {
             position: absolute !important;
-            left: max(18px, env(safe-area-inset-left)) !important;
+            left: max(14px, env(safe-area-inset-left)) !important;
             right: auto !important;
-            bottom: max(16px, env(safe-area-inset-bottom)) !important;
+            bottom: max(14px, env(safe-area-inset-bottom)) !important;
             top: auto !important;
-            width: clamp(112px, 19vh, 170px);
-            height: clamp(112px, 19vh, 170px);
+            width: clamp(124px, 22vh, 184px);
+            height: clamp(124px, 22vh, 184px);
             display: block !important;
             margin: 0 !important;
             pointer-events: none !important;
           }
           .steering-wheel-control {
-            --wheel-angle: 0deg;
             position: absolute;
             inset: 0;
             width: 100%;
@@ -151,83 +160,41 @@ function SteeringWheel({ mobileRef }) {
             padding: 0;
             border: 0;
             border-radius: 50%;
-            background: transparent;
+            background: radial-gradient(circle, rgba(15,19,26,.22), rgba(5,8,13,.05) 68%, transparent 70%);
             touch-action: none;
             pointer-events: auto;
             -webkit-tap-highlight-color: transparent;
             user-select: none;
           }
-          .steering-wheel-rim {
-            position: absolute;
-            inset: 5%;
-            border: clamp(9px, 1.6vh, 14px) solid rgba(22, 25, 30, .94);
-            border-radius: 50%;
-            box-shadow: 0 3px 12px rgba(0,0,0,.5),
-              inset 0 0 0 2px rgba(255,255,255,.35),
-              0 0 0 2px rgba(255,255,255,.55);
-            transform: rotate(var(--wheel-angle));
-            transition: transform 45ms linear;
+          .steering-wheel-control canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+            pointer-events: none;
           }
-          .steering-wheel-spoke {
+          .steering-wheel-caption {
             position: absolute;
             left: 50%;
-            top: 50%;
-            width: 11%;
-            height: 43%;
-            border-radius: 7px;
-            background: linear-gradient(90deg,#252a32,#68717c,#20252c);
-            transform-origin: 50% 0%;
-            box-shadow: 0 1px 4px rgba(0,0,0,.65);
-          }
-          .steering-wheel-spoke.left {
-            transform: translate(-50%, 0) rotate(55deg);
-          }
-          .steering-wheel-spoke.right {
-            transform: translate(-50%, 0) rotate(-55deg);
-          }
-          .steering-wheel-hub {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 30%;
-            height: 30%;
-            border: 2px solid rgba(255,255,255,.55);
-            border-radius: 50%;
-            background: radial-gradient(circle at 35% 30%,#59616c,#171b22 72%);
-            transform: translate(-50%,-50%);
-            box-shadow: 0 2px 8px rgba(0,0,0,.55);
-          }
-          .steering-wheel-mark {
-            position: absolute;
-            left: 50%;
-            top: 9%;
-            width: 9%;
-            height: 13%;
-            border-radius: 4px;
-            background: #e10600;
+            bottom: -15px;
             transform: translateX(-50%);
-          }
-          .steering-wheel-label {
-            position: absolute;
-            left: 50%;
-            bottom: -19px;
-            transform: translateX(-50%);
-            color: rgba(255,255,255,.88);
-            font: 800 9px/1 Arial,sans-serif;
+            color: rgba(255,255,255,.9);
+            font: 900 8px/1 Arial,sans-serif;
             letter-spacing: 2px;
             text-shadow: 0 2px 5px #000;
             white-space: nowrap;
+            pointer-events: none;
           }
         }
         @media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
           .mobile-controls .control-left {
-            width: 104px;
-            height: 104px;
-            left: max(10px, env(safe-area-inset-left)) !important;
-            bottom: max(9px, env(safe-area-inset-bottom)) !important;
+            width: 108px;
+            height: 108px;
+            left: max(8px, env(safe-area-inset-left)) !important;
+            bottom: max(8px, env(safe-area-inset-bottom)) !important;
           }
         }
       `}</style>
+
       <button
         ref={wheelRef}
         type="button"
@@ -254,13 +221,23 @@ function SteeringWheel({ mobileRef }) {
         onLostPointerCapture={releaseSteering}
         onContextMenu={(event) => event.preventDefault()}
       >
-        <span className="steering-wheel-rim">
-          <span className="steering-wheel-spoke left" />
-          <span className="steering-wheel-spoke right" />
-          <span className="steering-wheel-hub" />
-          <span className="steering-wheel-mark" />
-        </span>
-        <span className="steering-wheel-label">STEER</span>
+        <Canvas
+          orthographic
+          camera={{ position: [0, 0, 5], zoom: 115, near: 0.1, far: 30 }}
+          gl={{ alpha: true, antialias: true, powerPreference: "low-power" }}
+          dpr={1}
+          onCreated={({ gl }) => {
+            gl.setClearColor(0x000000, 0);
+          }}
+        >
+          <ambientLight intensity={1.8} />
+          <directionalLight position={[2, 3, 5]} intensity={2.2} />
+          <directionalLight position={[-3, -2, 2]} intensity={0.8} />
+          <group rotation={[0, 0, THREE_DEG_TO_RAD * angle]}>
+            <SteeringWheelModel angle={0} />
+          </group>
+        </Canvas>
+        <span className="steering-wheel-caption">STEER</span>
       </button>
     </>
   );
