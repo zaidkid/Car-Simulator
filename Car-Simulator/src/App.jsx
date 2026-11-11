@@ -56,6 +56,61 @@ function SceneReady({ onReady }) {
 // MOBILE CONTROLS
 // --------------------------------------------------
 
+// Layout overrides for touch devices in landscape only.
+// GAS is large, BRAKE is smaller, with a wide gap between them.
+// ERS / DRS sit above GAS. Desktop is unaffected.
+const MOBILE_LAYOUT_CSS = `
+@media (pointer: coarse) and (orientation: landscape) {
+  .mobile-controls .control-right {
+    position: fixed !important;
+    inset: 0 !important;
+    display: block !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .mobile-controls .control-right .touch-control {
+    position: absolute !important;
+    pointer-events: auto !important;
+    margin: 0 !important;
+    touch-action: none;
+  }
+
+  /* GAS: big, bottom-right */
+  .mobile-controls .accelerate-btn {
+    width: clamp(110px, 36vh, 160px) !important;
+    height: clamp(110px, 36vh, 160px) !important;
+    right: max(16px, env(safe-area-inset-right)) !important;
+    bottom: max(14px, env(safe-area-inset-bottom)) !important;
+    font-size: 18px !important;
+    border-radius: 26px !important;
+  }
+
+  /* BRAKE: smaller, with a wide gap from GAS */
+  .mobile-controls .reverse-btn {
+    width: clamp(78px, 26vh, 112px) !important;
+    height: clamp(78px, 26vh, 112px) !important;
+    right: calc(max(16px, env(safe-area-inset-right)) + clamp(110px, 36vh, 160px) + 30px) !important;
+    bottom: max(14px, env(safe-area-inset-bottom)) !important;
+    border-radius: 22px !important;
+  }
+
+  /* ERS / DRS above GAS */
+  .mobile-controls .mini-btn {
+    width: 56px !important;
+    height: 56px !important;
+    bottom: calc(max(14px, env(safe-area-inset-bottom)) + clamp(110px, 36vh, 160px) + 14px) !important;
+  }
+  .mobile-controls .mini-btn:nth-child(2) { /* DRS */
+    right: max(16px, env(safe-area-inset-right)) !important;
+  }
+  .mobile-controls .mini-btn:nth-child(1) { /* ERS */
+    right: calc(max(16px, env(safe-area-inset-right)) + 56px + 14px) !important;
+  }
+}
+`;
+
 function ControlButton({ label, field, mobileRef, className = "" }) {
   const set = (on) => {
     mobileRef.current[field] = on;
@@ -90,31 +145,75 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
 function SteeringWheel({ mobileRef }) {
   const wheelRef = useRef(null);
   const pointerIdRef = useRef(null);
+  const startAngleRef = useRef(0);
+  const steerRef = useRef(0); // -1 (left) .. 1 (right)
   const [wheelAngle, setWheelAngle] = useState(0);
 
-  const updateSteering = (event) => {
-    const element = wheelRef.current;
-    if (!element) return;
+  const MAX_TURN = 90; // degrees of wheel rotation = full lock
+  const DEADZONE = 0.06;
 
-    const rect = element.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const normalized = Math.max(
-      -1,
-      Math.min(1, (event.clientX - centerX) / (rect.width * 0.38))
+  const pointerAngle = (event) => {
+    const rect = wheelRef.current.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    return (
+      (Math.atan2(event.clientX - cx, -(event.clientY - cy)) * 180) / Math.PI
     );
+  };
 
-    setWheelAngle(normalized * 145);
-    const steering = Math.abs(normalized) < 0.07 ? 0 : normalized;
-    mobileRef.current.left = steering < 0;
-    mobileRef.current.right = steering > 0;
+  const updateSteering = (event) => {
+    if (!wheelRef.current) return;
+
+    let delta = pointerAngle(event) - startAngleRef.current;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+
+    const clamped = Math.max(-MAX_TURN, Math.min(MAX_TURN, delta));
+    setWheelAngle(clamped * 1.5); // visual rotation
+
+    let s = clamped / MAX_TURN;
+    s = Math.abs(s) < DEADZONE ? 0 : Math.sign(s) * Math.pow(Math.abs(s), 1.35);
+    steerRef.current = s;
   };
 
   const releaseSteering = () => {
     pointerIdRef.current = null;
+    steerRef.current = 0;
     setWheelAngle(0);
-    mobileRef.current.left = false;
-    mobileRef.current.right = false;
   };
+
+  // Turns the analog value into smooth left/right "pulses" per frame.
+  // Only writes to mobileRef while the wheel is in use, so keyboard still works.
+  useEffect(() => {
+    let raf;
+    let acc = 0;
+    let active = false;
+
+    const loop = () => {
+      const s = steerRef.current;
+      const m = mobileRef.current;
+
+      if (s === 0) {
+        if (active) {
+          m.left = false;
+          m.right = false;
+          active = false;
+          acc = 0;
+        }
+      } else {
+        active = true;
+        acc += Math.abs(s);
+        const on = acc >= 1;
+        if (on) acc -= 1;
+        m.left = on && s < 0;
+        m.right = on && s > 0;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [mobileRef]);
 
   return (
     <div className="steering-wheel-shell">
@@ -168,12 +267,13 @@ function SteeringWheel({ mobileRef }) {
         type="button"
         className="steering-wheel-hit"
         style={{ "--wheel-angle": `${wheelAngle}deg` }}
-        aria-label="Steering wheel. Drag left or right to steer."
+        aria-label="Steering wheel. Twist to steer."
         onPointerDown={(event) => {
           event.preventDefault();
           pointerIdRef.current = event.pointerId;
           try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
-          updateSteering(event);
+          startAngleRef.current = pointerAngle(event); // grab point = zero
+          setWheelAngle(0);
         }}
         onPointerMove={(event) => {
           if (pointerIdRef.current !== event.pointerId) return;
@@ -257,7 +357,7 @@ function SteeringWheel({ mobileRef }) {
           <path d="M109 168 L120 149 L131 168 L120 163Z" fill="#e10600"/>
           <text x="120" y="178" textAnchor="middle" fill="#fff" fontSize="5.5" fontWeight="900" letterSpacing=".8">APEX</text>
         </svg>
-        <span className="steering-wheel-caption">DRAG TO STEER</span>
+        <span className="steering-wheel-caption">TWIST TO STEER</span>
       </button>
     </div>
   );
@@ -716,6 +816,7 @@ export default function App() {
       {/* MOBILE CONTROLS */}
 
       <div className="mobile-controls">
+        <style>{MOBILE_LAYOUT_CSS}</style>
 
         <div className="control-left">
           <SteeringWheel mobileRef={mobileRef} />
