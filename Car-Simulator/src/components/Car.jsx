@@ -1,16 +1,17 @@
 import { RigidBody, CuboidCollider } from "@react-three/rapier";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
 
 import { game } from "./gameStore";
-import { START, track, trackNormals, WALL_OFFSET } from "./Race";
+import { START, track, trackNormals, WALL_OFFSET, carContact } from "./Race";
 import { telemetry, grid } from "./Telemetry";
 import { prepareCarModel } from "./CarModel";
 
 const F1_CAR_URL = "/models/Red_bull_car.glb";
 const G = 9.81;
+const SPARK_COUNT = 6;
 
 // ==========================================
 // F1 CAR TUNING
@@ -38,16 +39,16 @@ const CAR = {
   reverseSpeed: 20,
   reverseAccel: 9,
 
-  // ---- cornering / steering (v2: much more responsive) ----
-  roadGrip: 7, // how quickly sideways sliding is killed (was 5.5)
-  gripPerSpeed: 0.05, // extra grip with speed (was 0.035)
-  lateralBase: 24, // sideways acceleration available at low speed, m/s^2 (was 14)
-  downforceLat: 0.0085, // extra sideways acceleration from downforce (was 0.0054)
-  maxYawLow: 2.2, // maximum turn rate at low speed, rad/s (was 1.6)
+  // ---- cornering / steering ----
+  roadGrip: 7, // how quickly sideways sliding is killed
+  gripPerSpeed: 0.05, // extra grip with speed
+  lateralBase: 24, // sideways acceleration available at low speed, m/s^2
+  downforceLat: 0.0085, // extra sideways acceleration from downforce
+  maxYawLow: 2.2, // maximum turn rate at low speed, rad/s
 
-  steerRate: 8, // how fast the wheel turns toward the input (was 5.5)
-  steerReturn: 11, // how fast the wheel returns to centre (was 8)
-  steerSpeedFade: 80, // steering ramp slows only slightly with speed (was 30)
+  steerRate: 8, // how fast the wheel turns toward the input
+  steerReturn: 11, // how fast the wheel returns to centre
+  steerSpeedFade: 80, // steering ramp slows only slightly with speed
 
   ersDrain: 7,
   ersRecharge: 3,
@@ -109,38 +110,6 @@ const recolorLivery = (m) => {
 };
 
 // ==========================================
-// SPARK EFFECT
-// ==========================================
-
-function SparkBurst({ position, onDone }) {
-  const ref = useRef();
-  const age = useRef(0);
-
-  useFrame((_, delta) => {
-    age.current += delta;
-
-    if (ref.current) {
-      ref.current.scale.setScalar(1 + age.current * 3);
-      ref.current.material.opacity = Math.max(0, 1 - age.current / 0.35);
-    }
-
-    if (age.current > 0.35) onDone();
-  });
-
-  return (
-    <mesh ref={ref} position={position}>
-      <sphereGeometry args={[0.12, 8, 8]} />
-      <meshBasicMaterial
-        color="#ffb000"
-        transparent
-        depthWrite={false}
-        toneMapped={false}
-      />
-    </mesh>
-  );
-}
-
-// ==========================================
 // MAIN CAR COMPONENT
 // ==========================================
 
@@ -166,7 +135,6 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   }, [actions]);
 
   const keys = useRef({});
-  const [sparks, setSparks] = useState([]);
 
   const engine = useRef(null);
   const horn = useRef(null);
@@ -177,11 +145,21 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   const lastWall = useRef(0);
   const previousPhase = useRef("ready");
   const lastSpeed = useRef(-1);
+  const lastContactId = useRef(carContact.id);
 
   const collisionState = useRef({
     timer: 0,
+    duration: 1,
     spin: 0,
   });
+
+  // Spark pool: a fixed set of meshes that is re-used, so a crash never
+  // causes a React re-render (important for smoothness on phones).
+  const sparkMeshes = useRef([]);
+  const sparkState = useRef(
+    Array.from({ length: SPARK_COUNT }, () => ({ age: 1, scale: 1 })),
+  );
+  const sparkNext = useRef(0);
 
   // ==========================================
   // DRIVING STATE
@@ -199,6 +177,8 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     longG: 0,
     latG: 0,
     skidGain: 0,
+    audioPitch: 0,
+    audioRetry: 0,
   });
 
   const forward = useRef(new THREE.Vector3());
@@ -270,11 +250,6 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     telemetry.ers = false;
     telemetry.drs = false;
 
-    if (engine.current) {
-      engine.current.pause();
-      engine.current.currentTime = 0;
-    }
-
     if (skid.current) {
       skid.current.gain.gain.value = 0;
     }
@@ -311,8 +286,64 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     if (skid.current) {
       skid.current.gain.gain.value = 0;
+      if (skid.current.engineGain) skid.current.engineGain.gain.value = 0;
     }
   }, [paused, mobileRef]);
+
+  // ==========================================
+  // CRASH SPARKS + IMPACT RESPONSE
+  // ==========================================
+
+  const addSparks = (strength = 1) => {
+    const p = carRef.current?.translation();
+
+    if (p && strength > 0.12) {
+      const i = sparkNext.current++ % SPARK_COUNT;
+      const mesh = sparkMeshes.current[i];
+      const st = sparkState.current[i];
+
+      if (mesh) {
+        mesh.position.set(p.x, p.y + 0.4, p.z);
+        mesh.visible = true;
+      }
+
+      st.age = 0;
+      st.scale = 0.7 + strength * 0.9;
+    }
+
+    if (crashAudio.current) {
+      crashAudio.current.currentTime = 0;
+      crashAudio.current.volume = THREE.MathUtils.clamp(
+        0.25 + strength * 0.75,
+        0,
+        1,
+      );
+      crashAudio.current.play().catch(() => {});
+    }
+  };
+
+  // strength 0..1, spin in rad/s (sign = direction the car is knocked round)
+  const registerImpact = (strength, spin) => {
+    const s = THREE.MathUtils.clamp(strength, 0, 1);
+    const c = collisionState.current;
+
+    c.duration = 0.25 + s * 0.9;
+    c.timer = c.duration;
+    c.spin = spin;
+
+    if (s > 0.2) game.crash();
+
+    addSparks(s);
+
+    // Android phones: a short buzz on a hit (iOS ignores this)
+    if (s > 0.3) {
+      try {
+        navigator.vibrate?.(Math.round(20 + s * 60));
+      } catch {
+        /* not supported */
+      }
+    }
+  };
 
   // ==========================================
   // KEYBOARD INPUT
@@ -370,6 +401,7 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   useEffect(() => {
     engine.current = new Audio("/sounds/engine.mp3");
     engine.current.loop = true;
+    engine.current.preload = "auto";
     engine.current.volume = 0.4;
 
     engine.current.preservesPitch = false;
@@ -390,7 +422,11 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   }, []);
 
   // ==========================================
-  // TYRE SQUEAL
+  // TYRE SQUEAL + ENGINE VOLUME NODE
+  // Created on the first tap / key press (browsers require a gesture).
+  // The engine loop is routed through a gain node: it keeps running and only
+  // its volume changes, so there is no stop/start stutter and volume control
+  // also works on iPhones (where audio.volume is ignored).
   // ==========================================
 
   useEffect(() => {
@@ -402,6 +438,8 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
       if (!AudioCtx) return;
 
       const ctx = new AudioCtx();
+
+      if (ctx.resume) ctx.resume().catch(() => {});
 
       const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
 
@@ -429,10 +467,28 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
       source.start();
 
+      let engineGain = null;
+      const eng = engine.current;
+
+      if (eng) {
+        try {
+          const node = ctx.createMediaElementSource(eng);
+          engineGain = ctx.createGain();
+          engineGain.gain.value = 0;
+          node.connect(engineGain);
+          engineGain.connect(ctx.destination);
+          eng.volume = 1;
+          eng.play().catch(() => {});
+        } catch {
+          engineGain = null;
+        }
+      }
+
       skid.current = {
         ctx,
         gain,
         filter,
+        engineGain,
       };
     };
 
@@ -449,42 +505,19 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   }, []);
 
   // ==========================================
-  // CRASH SPARKS
-  // ==========================================
-
-  const addSparks = (now) => {
-    const p = carRef.current?.translation();
-
-    if (p) {
-      setSparks((items) => [
-        ...items,
-        {
-          id: now,
-          position: [p.x, p.y + 0.4, p.z],
-        },
-      ]);
-    }
-
-    if (crashAudio.current) {
-      crashAudio.current.currentTime = 0;
-      crashAudio.current.play().catch(() => {});
-    }
-  };
-
-  // ==========================================
-  // COLLISIONS
+  // COLLISIONS WITH THE ENVIRONMENT
+  // (car-to-car contact is handled in Race.jsx and arrives through
+  //  carContact, so it can be resolved smoothly instead of as a hard stop)
   // ==========================================
 
   const onCollision = (event) => {
     const otherName = event.other.rigidBodyObject?.name || "";
 
-    const isAI = otherName.startsWith("ai-car-");
-
     const isEnvironment = ["building", "traffic", "barrier"].includes(
       otherName,
     );
 
-    if (!isAI && !isEnvironment) return;
+    if (!isEnvironment) return;
 
     const now = performance.now();
 
@@ -519,13 +552,10 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
       ? Math.hypot(impactVelocity.x, impactVelocity.z)
       : 0;
 
-    collisionState.current.timer = 1.15;
-
-    collisionState.current.spin =
-      spinDirection * THREE.MathUtils.clamp(impactSpeed / 75, 0.12, 0.48);
-
-    game.crash();
-    addSparks(now);
+    registerImpact(
+      THREE.MathUtils.clamp(impactSpeed / 50, 0.2, 1),
+      spinDirection * THREE.MathUtils.clamp(impactSpeed / 75, 0.12, 0.48),
+    );
   };
 
   // ==========================================
@@ -544,6 +574,26 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     const dt = Math.min(delta, 0.04);
 
     if (dt <= 0) return;
+
+    // ---- spark pool ----
+    for (let i = 0; i < SPARK_COUNT; i++) {
+      const st = sparkState.current[i];
+
+      if (st.age >= 0.35) continue;
+
+      st.age += dt;
+
+      const mesh = sparkMeshes.current[i];
+
+      if (!mesh) continue;
+
+      if (st.age >= 0.35) {
+        mesh.visible = false;
+      } else {
+        mesh.scale.setScalar((1 + st.age * 3) * st.scale);
+        mesh.material.opacity = Math.max(0, 1 - st.age / 0.35);
+      }
+    }
 
     const phase = game.get().phase;
 
@@ -582,9 +632,25 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     const collision = collisionState.current;
 
+    // ---- contact with another car (resolved in Race.jsx) ----
+    if (carContact.id !== lastContactId.current) {
+      lastContactId.current = carContact.id;
+
+      const now = performance.now();
+
+      if (active && now - lastCrash.current > 250) {
+        lastCrash.current = now;
+        registerImpact(carContact.strength, carContact.spin);
+      }
+    }
+
     collision.timer = Math.max(0, collision.timer - dt);
 
-    const collisionBlend = THREE.MathUtils.smoothstep(collision.timer, 0, 1.15);
+    const collisionBlend = THREE.MathUtils.smoothstep(
+      collision.timer,
+      0,
+      collision.duration,
+    );
 
     // ==========================================
     // INPUT
@@ -601,7 +667,16 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     const right = k.d || k.arrowright || m.right;
 
-    const steerInput = canDrive ? (left ? 1 : 0) - (right ? 1 : 0) : 0;
+    const digitalSteer = (left ? 1 : 0) - (right ? 1 : 0);
+
+    // Touch steering wheel writes m.steer (-1 left .. +1 right, analog).
+    // It wins over the digital left/right flags while it is not zero.
+    const analogSteer =
+      typeof m.steer === "number" && m.steer !== 0 ? -m.steer : 0;
+
+    const steerInput = canDrive
+      ? THREE.MathUtils.clamp(analogSteer !== 0 ? analogSteer : digitalSteer, -1, 1)
+      : 0;
 
     // ==========================================
     // CURRENT MOTION
@@ -786,14 +861,16 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     // ==========================================
     // STEERING
-    // The wheel now reaches full lock quickly at every speed, and
-    // swinging from one side to the other is even faster (counter-steer).
+    // Reaches full lock quickly at every speed; swinging from one side
+    // to the other is even faster (counter-steer). Works with analog input.
     // ==========================================
 
     const steerBase = steerInput === 0 ? CAR.steerReturn : CAR.steerRate;
 
     const counterSteer =
-      steerInput !== 0 && Math.sign(steerInput) !== Math.sign(c.steer) && c.steer !== 0
+      steerInput !== 0 &&
+      Math.sign(steerInput) !== Math.sign(c.steer) &&
+      c.steer !== 0
         ? 1.5
         : 1;
 
@@ -845,19 +922,17 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
           lastWall.current = now;
 
           game.crash();
-          addSparks(now);
+          addSparks(THREE.MathUtils.clamp(outward / 30, 0.25, 1));
         }
       }
-
-      const p = body.translation();
 
       const push = Math.abs(offset) - wallLimit;
 
       body.setTranslation(
         {
-          x: p.x - n.x * side * push,
-          y: p.y,
-          z: p.z - n.z * side * push,
+          x: carPosition.x - n.x * side * push,
+          y: carPosition.y,
+          z: carPosition.z - n.z * side * push,
         },
         true,
       );
@@ -976,48 +1051,57 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     // ==========================================
     // ENGINE AUDIO — PLAYER CAR ONLY
-    // Keep the engine running continuously while the player
-    // holds the accelerator. Do not stop it based on speed:
-    // the car may be stationary briefly while launching or blocked.
+    // The loop keeps playing while the car is drivable; only its volume
+    // follows the throttle (smoothly, via c.throttle), so lifting off never
+    // stops and restarts the sound.
     // ==========================================
 
     const audio = engine.current;
 
     if (audio) {
-      const shouldPlayEngine = canDrive && throttleIn > 0;
+      const gainNode = skid.current?.engineGain;
+      const level = canDrive ? 0.1 + 0.3 * c.throttle : 0;
 
-      if (shouldPlayEngine) {
+      const actualSpeed = Math.hypot(current.x, current.z);
+      const speedNorm = THREE.MathUtils.clamp(
+        actualSpeed / CAR.gearTops[7],
+        0,
+        1,
+      );
+
+      c.audioPitch = THREE.MathUtils.damp(
+        c.audioPitch,
+        canDrive ? speedNorm : 0,
+        5,
+        dt,
+      );
+
+      const rate = 0.75 + c.audioPitch * 1.15;
+
+      if (Math.abs(audio.playbackRate - rate) > 0.01) {
+        audio.playbackRate = rate;
+      }
+
+      if (gainNode) {
+        gainNode.gain.value = level;
+
+        if (audio.paused && canDrive) {
+          c.audioRetry -= dt;
+
+          if (c.audioRetry <= 0) {
+            c.audioRetry = 0.5;
+            audio.play().catch(() => {});
+          }
+        }
+      } else if (level > 0.05) {
+        // Fallback when Web Audio is unavailable
+        audio.volume = Math.min(1, level);
+
         if (audio.paused) {
-          audio.currentTime = 0;
           audio.play().catch(() => {});
         }
-
-        // Actual speed changes the engine pitch, but never gates the sound.
-        const actualSpeed = Math.hypot(current.x, current.z);
-        const speedNorm = THREE.MathUtils.clamp(
-          actualSpeed / CAR.gearTops[7],
-          0,
-          1,
-        );
-
-        c.audioPitch = THREE.MathUtils.damp(
-          c.audioPitch || 0,
-          speedNorm,
-          5,
-          dt,
-        );
-
-        audio.playbackRate = 0.75 + c.audioPitch * 1.15;
-        audio.volume = 0.38;
-      } else {
-        // Stop only when the accelerator is released or the race is inactive.
-        if (!audio.paused) {
-          audio.pause();
-          audio.currentTime = 0;
-        }
-
-        audio.volume = 0;
-        c.audioPitch = 0;
+      } else if (!audio.paused) {
+        audio.pause();
       }
     }
 
@@ -1045,33 +1129,31 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     }
 
     // ==========================================
-    // TELEMETRY
+    // TELEMETRY (written field by field: no object allocated per frame)
     // ==========================================
 
-    Object.assign(telemetry, {
-      speed,
-      kmh: Math.round(speed * 3.6),
-      gear:
-        forwardSpeed < -0.5 ? -1 : v < 0.8 && c.throttle < 0.05 ? 0 : c.gear,
+    telemetry.speed = speed;
+    telemetry.kmh = Math.round(speed * 3.6);
+    telemetry.gear =
+      forwardSpeed < -0.5 ? -1 : v < 0.8 && c.throttle < 0.05 ? 0 : c.gear;
 
-      rpm: c.rpm,
-      idleRpm: CAR.idleRpm,
-      maxRpm: CAR.maxRpm,
+    telemetry.rpm = c.rpm;
+    telemetry.idleRpm = CAR.idleRpm;
+    telemetry.maxRpm = CAR.maxRpm;
 
-      throttle: c.throttle,
-      brake: c.brake,
-      steer: c.steer,
+    telemetry.throttle = c.throttle;
+    telemetry.brake = c.brake;
+    telemetry.steer = c.steer;
 
-      latG: c.latG,
-      longG: c.longG,
+    telemetry.latG = c.latG;
+    telemetry.longG = c.longG;
 
-      battery: c.battery,
+    telemetry.battery = c.battery;
 
-      ers: !!ersOn,
-      drs: !!drsOn,
+    telemetry.ers = !!ersOn;
+    telemetry.drs = !!drsOn;
 
-      surface: surfaceName,
-    });
+    telemetry.surface = surfaceName;
 
     // ==========================================
     // SPEEDOMETER
@@ -1115,14 +1197,23 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
         </group>
       </RigidBody>
 
-      {sparks.map((spark) => (
-        <SparkBurst
-          key={spark.id}
-          position={spark.position}
-          onDone={() =>
-            setSparks((items) => items.filter((item) => item.id !== spark.id))
-          }
-        />
+      {/* Spark pool (re-used, never mounted/unmounted) */}
+      {Array.from({ length: SPARK_COUNT }, (_, i) => (
+        <mesh
+          key={i}
+          ref={(mesh) => {
+            sparkMeshes.current[i] = mesh;
+          }}
+          visible={false}
+        >
+          <sphereGeometry args={[0.12, 8, 8]} />
+          <meshBasicMaterial
+            color="#ffb000"
+            transparent
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
       ))}
     </>
   );
