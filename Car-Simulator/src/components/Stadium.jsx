@@ -2,20 +2,13 @@ import { useMemo, useRef, useLayoutEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { curve } from "./Trackcurve";
-import { PHONE, LOW_POWER } from "./quality";
 
-// APEX RACING - F1 trackside environment v6 (performance pass)
+// APEX RACING - F1 trackside environment v5
 // Follows ./TrackCurve, so nothing overlaps other sections of the circuit.
-//
-// v6 changes:
-//  - Instances are split into CHUNKS along the lap with frustum culling ON, so
-//    only the stretch of circuit in view (and in the shadow camera) is drawn.
-//  - One shared flag-wave timer instead of one useFrame per instanced mesh.
-//  - Phones: no shadow casting, lower-poly cylinders / hills / blimp, fewer trees,
-//    lower texture anisotropy. LOW_POWER phones also lose the blimp and half
-//    of the far skyline.
-
-const SHADOWS = !PHONE; // phones do not render shadows
+// New in v5: structures cast real shadows, waving team flags, a cleaner catch
+// fence (no more moire), glass + concrete towers with podiums and colour bands,
+// TV camera towers, a far city skyline, brighter fresh palette, and a blimp
+// circling over the circuit.
 
 const TRACK_OFFSET = 34; // distance from the centre line to the ad wall area
 const BASE = 3; // grandstands start this far beyond TRACK_OFFSET
@@ -24,16 +17,6 @@ const TILT = 0.13;
 const L = curve.getLength();
 const SEGMENTS = Math.round(L / 24);
 const LEN = (L / SEGMENTS) * 1.03;
-
-// Culling chunks: each material is split into this many pieces along the lap.
-// More chunks = better culling but more draw calls. Tune with <Stats /> if needed.
-const CHUNKS = 10;
-const CH = Math.ceil(SEGMENTS / CHUNKS);
-
-// Density settings
-const TREE_CUT = LOW_POWER ? 0.7 : PHONE ? 0.55 : 0.4; // higher = fewer trees
-const LEAF_BLOBS = LOW_POWER ? 2 : 3;
-const FAR_COUNT = LOW_POWER ? 45 : 90;
 
 // Clearance check: distance to the nearest part of the track that is NOT nearby
 // along the lap, so nothing is built on top of another section of the circuit
@@ -90,7 +73,7 @@ const tex = (w, h, draw) => {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = PHONE ? 4 : 8;
+  t.anisotropy = 8;
   return t;
 };
 
@@ -268,17 +251,14 @@ const facadeTex = (style, h) => {
 // ---------- instancing ----------
 const GEOS = {
   box: new THREE.BoxGeometry(1, 1, 1),
-  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, PHONE ? 6 : 8),
+  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
   ico: new THREE.IcosahedronGeometry(0.5, 1),
   // extra segments along z so a flag can ripple
   flag: new THREE.BoxGeometry(1, 1, 1, 1, 1, 12),
 };
 
-// One shared clock for every waving flag (advanced once per frame in <Stadium />)
-const uTime = { value: 0 };
-
 // Flag ripple: grows from the pole (z = -0.5) to the free edge (z = +0.5)
-const waveShader = (shader) => {
+const waveShader = (uTime) => (shader) => {
   shader.uniforms.uTime = uTime;
   shader.vertexShader =
     "uniform float uTime;\n" +
@@ -294,6 +274,12 @@ const waveShader = (shader) => {
 
 function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = false, ...mat }) {
   const ref = useRef();
+  const uTime = useMemo(() => ({ value: 0 }), []);
+  const onBeforeCompile = useMemo(() => (wave ? waveShader(uTime) : undefined), [wave, uTime]);
+
+  useFrame((_, delta) => {
+    if (wave) uTime.value += Math.min(delta, 0.1);
+  });
 
   useLayoutEffect(() => {
     const m = ref.current;
@@ -311,7 +297,6 @@ function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = fa
     });
     m.instanceMatrix.needsUpdate = true;
     m.instanceColor.needsUpdate = true;
-    // Needed for frustum culling to work on instanced meshes
     m.computeBoundingSphere();
   }, [items, color]);
 
@@ -322,12 +307,13 @@ function Instanced({ items, geo = "box", color = "#fff", cast = false, wave = fa
       ref={ref}
       key={items.length}
       args={[GEOS[geo], undefined, items.length]}
+      frustumCulled={false}
       receiveShadow
-      castShadow={cast && SHADOWS}
+      castShadow={cast}
     >
       <meshStandardMaterial
         {...mat}
-        onBeforeCompile={wave ? waveShader : undefined}
+        onBeforeCompile={onBeforeCompile}
         customProgramCacheKey={() => (wave ? "stadium-wave" : "stadium-plain")}
       />
     </instancedMesh>
@@ -388,7 +374,6 @@ function generate() {
 
   for (let i = 0; i < SEGMENTS; i++) {
     const t = (i + 0.5) / SEGMENTS;
-    const ch = Math.floor(i / CH); // culling chunk for everything built here
     const point = curve.getPointAt(t);
     const tan = curve.getTangentAt(t);
     const t2 = curve.getTangentAt((t + 1 / SEGMENTS) % 1);
@@ -412,7 +397,7 @@ function generate() {
 
       const add = (k, o, h, s, c, dt = 0, rz = 0) => {
         const p = point.clone().addScaledVector(normal, side * (TRACK_OFFSET + o)).addScaledVector(tan, dt);
-        g[k].push({ p: [p.x, h, p.z], s, ry: yaw, rz, c, ch });
+        g[k].push({ p: [p.x, h, p.z], s, ry: yaw, rz, c });
       };
 
       // verge, ad wall behind the barrier, catch fence (posts lean inward)
@@ -480,15 +465,15 @@ function generate() {
         add("flags", -3, 6.1, [0.04, 1.5, 2.8], pick(TEAMS, i + side + 3), 1.4);
       }
 
-      // trees: trunk + leaf blobs (fewer on phones)
+      // trees: trunk + 3 leaf blobs
       const to = stand || paddock ? 26 + rnd(seed + 5) * 10 : 8 + rnd(seed + 5) * 14;
 
-      if (rnd(seed + 3) > TREE_CUT && free(to, 32)) {
+      if (rnd(seed + 3) > 0.4 && free(to, 32)) {
         const dt = (rnd(seed + 11) - 0.5) * LEN;
         const w = 3.5 + rnd(seed + 9) * 2;
 
         add("trunks", to, 2, [0.5, 4, 0.5], null, dt);
-        for (let b = 0; b < LEAF_BLOBS; b++)
+        for (let b = 0; b < 3; b++)
           add(
             "leaves",
             to + (rnd(seed + b * 3) - 0.5) * 2,
@@ -545,6 +530,7 @@ function generate() {
   }
 
   // ---------- far city skyline (soft blue-grey, melts into the fog) ----------
+  const FAR_COUNT = 90;
   for (let k = 0; k < FAR_COUNT; k++) {
     const a = (k / FAR_COUNT) * Math.PI * 2 + (rnd(k * 3.1) - 0.5) * 0.06;
     const rad = TRACK_R + 240 + rnd(k * 5.7) * 170;
@@ -556,7 +542,6 @@ function generate() {
       s: [w, h, w * (0.7 + rnd(k * 2.3) * 0.6)],
       ry: a + rnd(k * 1.7),
       c: pick(FAR, rnd(k * 13.3) * 4),
-      ch: 0, // spread all around the circuit, so it is effectively never culled
     });
   }
 
@@ -573,9 +558,8 @@ function generate() {
     if (farMin(a.x, a.z, t) < 40 || farMin(b.x, b.z, t) < 40) continue;
 
     const yaw = Math.atan2(tan.x, tan.z);
-    const ch = Math.floor(Math.floor(t * SEGMENTS) / CH);
 
-    const put = (key, x, y, z, s) => g[key].push({ p: [x, y, z], s, ry: yaw, ch });
+    const put = (key, x, y, z, s) => g[key].push({ p: [x, y, z], s, ry: yaw });
 
     // deck, rails, banner, and a support on each side
     put("bridge", p.x, 9, p.z, [62, 0.7, 4]);
@@ -595,27 +579,12 @@ function generate() {
   return g;
 }
 
-// Split every material's instances into culling chunks.
-function chunkify(env) {
-  const out = [];
-  for (const k of Object.keys(MATS)) {
-    const byChunk = new Map();
-    for (const it of env[k]) {
-      const c = it.ch ?? 0;
-      if (!byChunk.has(c)) byChunk.set(c, []);
-      byChunk.get(c).push(it);
-    }
-    byChunk.forEach((items, c) => out.push({ k, c, items }));
-  }
-  return out;
-}
-
 // ---------- distant hills (fade into the fog) ----------
 function makeHills() {
   const inner = TRACK_R + 450;
   const outer = inner + 900;
-  const SEG = PHONE ? 112 : 192;
-  const RINGS = PHONE ? 8 : 10;
+  const SEG = 192;
+  const RINGS = 10;
 
   const pos = [];
   const col = [];
@@ -720,7 +689,7 @@ function Blimp({ altitude = 150, speed = 0.02 }) {
   return (
     <group ref={ref}>
       <mesh scale={[26, 8, 8]}>
-        <sphereGeometry args={[1, PHONE ? 20 : 32, PHONE ? 12 : 16]} />
+        <sphereGeometry args={[1, 32, 16]} />
         <meshStandardMaterial map={skin} roughness={0.5} />
       </mesh>
 
@@ -746,12 +715,6 @@ function Blimp({ altitude = 150, speed = 0.02 }) {
 export default function Stadium() {
   const env = useMemo(generate, []);
   const hills = useMemo(makeHills, []);
-  const parts = useMemo(() => chunkify(env), [env]);
-
-  // One clock for all waving flags
-  useFrame((_, delta) => {
-    uTime.value += Math.min(delta, 0.1);
-  });
 
   return (
     <group>
@@ -759,10 +722,10 @@ export default function Stadium() {
         <meshStandardMaterial vertexColors roughness={1} side={THREE.DoubleSide} />
       </mesh>
 
-      {!LOW_POWER && <Blimp />}
+      <Blimp />
 
-      {parts.map(({ k, c, items }) => (
-        <Instanced key={`${k}-${c}`} items={items} {...MATS[k]} />
+      {Object.entries(MATS).map(([k, m]) => (
+        <Instanced key={k} items={env[k]} {...m} />
       ))}
     </group>
   );

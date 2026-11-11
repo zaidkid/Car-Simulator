@@ -9,7 +9,6 @@ import { grid, raceInfo } from "./Telemetry";
 import { curve } from "./Trackcurve";
 import { prepareCarModel } from "./CarModel";
 import { mapCars } from "./Racemap";
-import { PHONE } from "./quality";
 
 // Begin downloading and parsing the player/AI car model as soon as this
 // module is imported, rather than waiting for the Race component to mount.
@@ -35,24 +34,6 @@ const PENALTY = 5; // seconds
 const DRS_RULES = true; // false = DRS anywhere
 const DRS_FROM_LAP = 2;
 const DRS_GAP = 1.0; // seconds to the car ahead
-
-// ---- performance (phones) ----
-const AI_VISIBLE_RANGE = PHONE ? 450 : Infinity; // AI cars further away than this (m) are not drawn
-const LEADERBOARD_INTERVAL = PHONE ? 0.35 : 0.2; // seconds between leaderboard updates (React re-render)
-const HUD_INTERVAL = 0.1; // seconds between HUD text updates
-
-// ---- car-to-car contact ----
-// Handled here (not by the physics engine) so a touch becomes a bump, a shove
-// or a spin instead of the player hitting an invisible wall.
-const CAR_HALF_W = 1.0; // half width of a car (m)
-const CAR_HALF_L = 2.6; // half length of a car (m)
-const AI_MASS = 1.25; // player mass is 1, so the player is knocked about slightly more
-const RESTITUTION = 0.14; // how much cars bounce apart
-const MIN_HIT_SPEED = 2.0; // closing speed (m/s) needed to count as a hit (sound, sparks, spin)
-const MAX_PUSH_PER_FRAME = 0.5; // max separation per frame (m), keeps deep overlaps smooth
-
-// Written by the race loop, read by Car.jsx: a new id = a new car-to-car hit.
-export const carContact = { id: 0, strength: 0, spin: 0 };
 
 // ---- AI field: every AI gets a different pace each race ----
 // pace is 0 (slowest) .. 1 (fastest). Paces are shuffled across the five AI
@@ -326,7 +307,7 @@ function InstancedItems({ items, children }) {
     <instancedMesh
       ref={ref}
       args={[undefined, undefined, items.length]}
-      receiveShadow={!PHONE}
+      receiveShadow
       frustumCulled={false}
     >
       {children}
@@ -355,8 +336,6 @@ function makeCheckerTexture() {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
-  // Keeps the chequered line sharp when seen at a shallow angle from the cockpit
-  texture.anisotropy = PHONE ? 4 : 8;
   return texture;
 }
 
@@ -405,13 +384,13 @@ function StartLine({ lightMats }) {
       </mesh>
 
       {[-14, 14].map((x) => (
-        <mesh key={x} position={[x, 4.2, 0]} castShadow={!PHONE}>
+        <mesh key={x} position={[x, 4.2, 0]} castShadow>
           <boxGeometry args={[0.9, 8.4, 0.9]} />
           <meshStandardMaterial color="#1a1c22" roughness={0.5} />
         </mesh>
       ))}
 
-      <mesh position={[0, 8.4, 0]} castShadow={!PHONE}>
+      <mesh position={[0, 8.4, 0]} castShadow>
         <boxGeometry args={[29, 1.4, 1.4]} />
         <meshStandardMaterial color="#1a1c22" roughness={0.5} />
       </mesh>
@@ -461,67 +440,6 @@ const freshRules = () => ({
   penaltyCooldown: 0,
   finalTime: null,
 });
-
-// ---- Car-to-car overlap test (two oriented rectangles, separating-axis) ----
-// yaw convention: forward = (sin yaw, cos yaw), local x = (cos yaw, -sin yaw).
-// A = AI car, B = player car. On a hit, the normal points from A to B.
-const hitResult = { depth: 0, nx: 0, nz: 0 };
-const axes = new Float64Array(8);
-
-function carContactTest(ax, az, ayaw, bx, bz, byaw) {
-  const dx = bx - ax;
-  const dz = bz - az;
-
-  // Quick reject: the cars are further apart than their diagonals
-  if (dx * dx + dz * dz > 42) return null;
-
-  const afx = Math.sin(ayaw);
-  const afz = Math.cos(ayaw);
-  const axx = Math.cos(ayaw);
-  const axz = -Math.sin(ayaw);
-  const bfx = Math.sin(byaw);
-  const bfz = Math.cos(byaw);
-  const bxx = Math.cos(byaw);
-  const bxz = -Math.sin(byaw);
-
-  axes[0] = afx; axes[1] = afz;
-  axes[2] = axx; axes[3] = axz;
-  axes[4] = bfx; axes[5] = bfz;
-  axes[6] = bxx; axes[7] = bxz;
-
-  let minDepth = Infinity;
-  let mnx = 0;
-  let mnz = 0;
-
-  for (let i = 0; i < 8; i += 2) {
-    const ux = axes[i];
-    const uz = axes[i + 1];
-
-    const rA =
-      CAR_HALF_L * Math.abs(ux * afx + uz * afz) +
-      CAR_HALF_W * Math.abs(ux * axx + uz * axz);
-    const rB =
-      CAR_HALF_L * Math.abs(ux * bfx + uz * bfz) +
-      CAR_HALF_W * Math.abs(ux * bxx + uz * bxz);
-
-    const dd = dx * ux + dz * uz;
-    const depth = rA + rB - Math.abs(dd);
-
-    if (depth <= 0) return null; // a gap exists on this axis: no contact
-
-    if (depth < minDepth) {
-      minDepth = depth;
-      const s = dd < 0 ? -1 : 1;
-      mnx = ux * s;
-      mnz = uz * s;
-    }
-  }
-
-  hitResult.depth = minDepth;
-  hitResult.nx = mnx;
-  hitResult.nz = mnz;
-  return hitResult;
-}
 
 // ---- AI field generation ----
 
@@ -579,7 +497,7 @@ function resetDriver(o, index, pace) {
     passTarget: 0,
     passOffset: 0,
 
-    // collision reaction (impactDirection is signed: sideways shove, + = lat positive)
+    // collision reaction
     impactTimer: 0,
     impactDirection: 0,
     impactOffset: 0,
@@ -678,8 +596,6 @@ export default function Race({ carRef, hudRef, paused = false }) {
     finishTime: null,
     finishPosition: 0,
     leaderboardTimer: 0,
-    hudTimer: 0,
-    hudText: "",
     gridTimer: 0,
     gridHold: 1.2,
     litShown: -1,
@@ -689,6 +605,49 @@ export default function Race({ carRef, hudRef, paused = false }) {
     resetToken: 0,
     ...freshRules(),
   });
+
+  // AI COLLISION REACTION + "CAUSING A COLLISION" PENALTY
+  const handleAICollision = (index) => {
+    const opponent = opponents[index];
+    const playerBody = carRef.current;
+    const aiBody = opponent?.bodyRef.current;
+
+    if (!opponent || !playerBody || !aiBody || opponent.collisionCooldown > 0) return;
+
+    const playerPosition = playerBody.translation();
+    const aiPosition = aiBody.translation();
+    const q = aiBody.rotation();
+    const aiRotation = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+
+    const aiRight = new THREE.Vector3(1, 0, 0).applyQuaternion(aiRotation);
+    const aiForward = new THREE.Vector3(0, 0, 1).applyQuaternion(aiRotation);
+
+    const dx = playerPosition.x - aiPosition.x;
+    const dz = playerPosition.z - aiPosition.z;
+
+    opponent.impactDirection = dx * aiRight.x + dz * aiRight.z >= 0 ? -1 : 1;
+    opponent.impactTimer = 1.5;
+    opponent.collisionCooldown = 0.55;
+    opponent.speed *= 0.72;
+
+    // Hitting a car from behind at speed = 5 second penalty
+    const v = playerBody.linvel();
+    const s = race.current;
+    const fromBehind = dx * aiForward.x + dz * aiForward.z < -1;
+
+    if (
+      fromBehind &&
+      Math.hypot(v.x, v.z) > 8 &&
+      s.phase === "playing" &&
+      grid.go &&
+      s.finishTime === null &&
+      s.penaltyCooldown <= 0
+    ) {
+      s.penalty += PENALTY;
+      s.penaltyCooldown = 3;
+      say(`${PENALTY} SECOND PENALTY - CAUSING A COLLISION`);
+    }
+  };
 
   // ==========================================
   // MAIN RACE LOOP
@@ -893,7 +852,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
 
           // ---- speed: corner/braking limit x form x rubber band x mistake x slipstream ----
           // Cache the look-ahead scan to avoid doing expensive work every frame.
-          // Refresh at ~12 Hz, then smoothly follow the new target speed.
+          // Refresh at 10 Hz, then smoothly follow the new target speed.
           o.brakeTargetTimer -= dt;
           if (o.brakeTargetTimer <= 0) {
             o.brakeTarget = brakingTarget(
@@ -1020,124 +979,6 @@ export default function Race({ carRef, hudRef, paused = false }) {
     pc.x = position.x;
     pc.z = position.z;
     pc.yaw = 2 * Math.atan2(rq.y, rq.w);
-
-    // ---- AI cars: draw distance + car-to-car contact ----
-    {
-      const visRange2 = AI_VISIBLE_RANGE * AI_VISIBLE_RANGE;
-
-      let vx = lv.x;
-      let vz = lv.z;
-      let px = position.x;
-      let pz = position.z;
-      let velocityChanged = false;
-      let positionChanged = false;
-
-      for (let oi = 0; oi < opponents.length; oi++) {
-        const o = opponents[oi];
-        const mc = mapCars[oi + 1];
-
-        if (!mc) continue;
-
-        // Do not draw (or pay for) AI cars that are far away on phones
-        const ddx = mc.x - position.x;
-        const ddz = mc.z - position.z;
-        o.object.visible = ddx * ddx + ddz * ddz < visRange2;
-
-        if (!running) continue;
-
-        const hit = carContactTest(mc.x, mc.z, mc.yaw, px, pz, pc.yaw);
-
-        if (!hit) continue;
-
-        const nx = hit.nx; // from the AI car to the player
-        const nz = hit.nz;
-
-        // AI car axes: forward, and "lane" direction (+ = lat positive)
-        const fx = Math.sin(mc.yaw);
-        const fz = Math.cos(mc.yaw);
-        const lx = -Math.cos(mc.yaw);
-        const lz = Math.sin(mc.yaw);
-
-        // Relative velocity along the contact normal (negative = cars moving together)
-        const rvx = vx - fx * o.speed;
-        const rvz = vz - fz * o.speed;
-        const closing = -(rvx * nx + rvz * nz);
-
-        if (closing > 0) {
-          // Impulse: both cars get knocked apart, the lighter one more
-          const j = Math.min(((1 + RESTITUTION) * closing) / (1 + 1 / AI_MASS), 16);
-
-          vx += nx * j;
-          vz += nz * j;
-          velocityChanged = true;
-
-          const dvx = (-nx * j) / AI_MASS;
-          const dvz = (-nz * j) / AI_MASS;
-
-          // AI car: forward part changes its speed, sideways part shoves it across the track
-          o.speed = Math.max(0, o.speed + dvx * fx + dvz * fz);
-
-          const dvLat = dvx * lx + dvz * lz;
-
-          if (Math.abs(dvLat) > 0.25) {
-            o.impactDirection = THREE.MathUtils.clamp(dvLat * 0.45, -1.2, 1.2);
-            o.impactTimer = Math.max(o.impactTimer, 0.6 + Math.min(0.9, closing * 0.08));
-          }
-
-          // A real "hit" (not just rubbing): sound, sparks, spin, penalty check
-          if (closing > MIN_HIT_SPEED && o.collisionCooldown <= 0) {
-            o.collisionCooldown = 0.4;
-
-            const strength = THREE.MathUtils.clamp(closing / 14, 0.1, 1);
-
-            // Which way the player's car is knocked round: depends on where it was hit
-            const pbx = Math.cos(pc.yaw);
-            const pbz = -Math.sin(pc.yaw);
-            const pfx = Math.sin(pc.yaw);
-            const pfz = Math.cos(pc.yaw);
-            const nxl = nx * pbx + nz * pbz;
-            const nzl = nx * pfx + nz * pfz;
-            const torque = nxl * nzl * (CAR_HALF_W - CAR_HALF_L);
-
-            carContact.strength = strength;
-            carContact.spin = strength > 0.3 ? (torque >= 0 ? 1 : -1) * strength * 0.5 : 0;
-            carContact.id += 1;
-
-            // Hitting a car from behind at speed = 5 second penalty
-            const fromBehind = (px - mc.x) * fx + (pz - mc.z) * fz < -1;
-
-            if (
-              fromBehind &&
-              closing > 2.5 &&
-              Math.hypot(vx, vz) > 8 &&
-              racing &&
-              state.penaltyCooldown <= 0
-            ) {
-              state.penalty += PENALTY;
-              state.penaltyCooldown = 3;
-              say(`${PENALTY} SECOND PENALTY - CAUSING A COLLISION`);
-            }
-          }
-        }
-
-        // Separate the cars gently (spread over a few frames), never a sudden jump
-        const push = Math.min(hit.depth, MAX_PUSH_PER_FRAME);
-        const pushPlayer = push * 0.55;
-        const pushAI = push * 0.45;
-
-        px += nx * pushPlayer;
-        pz += nz * pushPlayer;
-        positionChanged = true;
-
-        const mx = -nx * pushAI;
-        const mz = -nz * pushAI;
-        o.distance += mx * fx + mz * fz;
-        o.impactOffset += mx * lx + mz * lz;
-      }
-
-      if (positionChanged) body.setTranslation({ x: px, y: position.y, z: pz }, true);
-      if (velocityChanged) body.setLinvel({ x: vx, y: lv.y, z: vz }, true);
-    }
 
     // Car was put back on the grid (R key)
     if (state.resetToken !== track.resetToken) {
@@ -1296,10 +1137,10 @@ export default function Race({ carRef, hudRef, paused = false }) {
       }
     }
 
-    // ---- live leaderboard (every update re-renders React, so phones update it less often) ----
+    // ---- live leaderboard ----
     state.leaderboardTimer += dt;
 
-    if (running && state.leaderboardTimer >= LEADERBOARD_INTERVAL) {
+    if (running && state.leaderboardTimer >= 0.2) {
       state.leaderboardTimer = 0;
 
       const racers = [
@@ -1347,25 +1188,15 @@ export default function Race({ carRef, hudRef, paused = false }) {
       gapAhead: Number.isFinite(gapAhead) ? gapAhead : null,
     });
 
-    // The HUD text is only touched ~10 times a second, and only when it changed
-    state.hudTimer += dt;
-
-    if (hudRef?.current && (state.hudTimer >= HUD_INTERVAL || state.finishTime !== null)) {
-      state.hudTimer = 0;
-
+    if (hudRef?.current) {
       const best = state.bestLap !== null ? ` · BEST ${formatTime(state.bestLap)}` : "";
       const pen = state.penalty ? ` · +${state.penalty}S` : "";
       const total = opponents.length + 1;
 
-      const text =
+      hudRef.current.textContent =
         state.finishTime !== null
           ? `FINISHED · P${state.finishPosition} · ${formatTime(state.finalTime)}${pen}`
           : `P${playerRank}/${total} · LAP ${currentLap}/${LAPS} · ${formatTime(state.elapsed)}${best}${pen}`;
-
-      if (text !== state.hudText) {
-        state.hudText = text;
-        hudRef.current.textContent = text;
-      }
     }
   });
 
@@ -1376,7 +1207,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
   return (
     <>
       {trackMeshes.map((geometry, index) => (
-        <mesh key={index} geometry={geometry} receiveShadow={!PHONE}>
+        <mesh key={index} geometry={geometry} receiveShadow>
           <meshStandardMaterial
             vertexColors
             side={THREE.DoubleSide}
@@ -1396,7 +1227,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
       </InstancedItems>
 
       <InstancedItems items={tyreItems}>
-        <cylinderGeometry args={[0.5, 0.5, 0.5, PHONE ? 8 : 14]} />
+        <cylinderGeometry args={[0.5, 0.5, 0.5, 14]} />
       </InstancedItems>
 
       <InstancedItems items={drsItems}>
@@ -1406,9 +1237,6 @@ export default function Race({ carRef, hudRef, paused = false }) {
       {opponents.map((o, index) => {
         const { x, z, yaw } = laneXZ(-(index + 1) * GRID_GAP, o.lane);
 
-        // The AI car's collider is a sensor: the physics engine no longer
-        // stops the player dead against it. Contact is resolved in the race
-        // loop above, which gives a proper bump / shove / spin.
         return (
           <RigidBody
             key={index}
@@ -1420,10 +1248,11 @@ export default function Race({ carRef, hudRef, paused = false }) {
             position={[x, 0.42, z]}
             rotation={[0, yaw, 0]}
             name={`ai-car-${index}`}
+            onCollisionEnter={() => handleAICollision(index)}
             enabledRotations={[false, true, false]}
             canSleep={false}
           >
-            <CuboidCollider args={[1.03, 0.42, 2.7]} sensor />
+            <CuboidCollider args={[1.03, 0.42, 2.7]} friction={0.9} restitution={0.02} />
             <primitive object={o.object} />
           </RigidBody>
         );

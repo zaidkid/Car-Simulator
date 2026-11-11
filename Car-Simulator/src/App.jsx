@@ -23,7 +23,9 @@ import "./mobile.css";
 
 useGLTF.preload("/models/Red_bull_car.glb");
 
-const PHONE = matchMedia("(pointer: coarse)").matches;
+const PHONE =
+  typeof window !== "undefined" &&
+  window.matchMedia("(pointer: coarse)").matches;
 
 const EMPTY_CONTROLS = () => ({
   forward: false,
@@ -52,15 +54,10 @@ function SceneReady({ onReady }) {
   return null;
 }
 
-// --------------------------------------------------
-// MOBILE CONTROLS
-// --------------------------------------------------
-
-// Layout overrides for touch devices in landscape only.
-// GAS is large, BRAKE is smaller, with a wide gap between them.
-// ERS / DRS sit above GAS. Desktop is unaffected.
+// MOBILE CONTROL LAYOUT
 const MOBILE_LAYOUT_CSS = `
 @media (pointer: coarse) and (orientation: landscape) {
+
   .mobile-controls .control-left,
   .mobile-controls .control-right {
     position: fixed !important;
@@ -85,13 +82,12 @@ const MOBILE_LAYOUT_CSS = `
     -webkit-tap-highlight-color: transparent !important;
   }
 
-  /* LEFT / RIGHT steering buttons: large and clearly separated */
   .mobile-controls .steer-btn {
     width: clamp(88px, 25vh, 118px) !important;
     height: clamp(88px, 25vh, 118px) !important;
     bottom: max(18px, env(safe-area-inset-bottom)) !important;
     border-radius: 24px !important;
-    font-size: 19px !important;
+    font-size: 42px !important;
     font-weight: 900 !important;
   }
 
@@ -100,10 +96,12 @@ const MOBILE_LAYOUT_CSS = `
   }
 
   .mobile-controls .steer-right {
-    left: calc(max(18px, env(safe-area-inset-left)) + clamp(88px, 25vh, 118px) + 22px) !important;
+    left: calc(
+      max(18px, env(safe-area-inset-left)) +
+      clamp(88px, 25vh, 118px) + 22px
+    ) !important;
   }
 
-  /* GAS is intentionally larger than BRAKE */
   .mobile-controls .accelerate-btn {
     width: clamp(116px, 36vh, 158px) !important;
     height: clamp(116px, 36vh, 158px) !important;
@@ -117,23 +115,30 @@ const MOBILE_LAYOUT_CSS = `
   .mobile-controls .reverse-btn {
     width: clamp(88px, 27vh, 116px) !important;
     height: clamp(88px, 27vh, 116px) !important;
-    right: calc(max(18px, env(safe-area-inset-right)) + clamp(116px, 36vh, 158px) + 26px) !important;
+    right: calc(
+      max(18px, env(safe-area-inset-right)) +
+      clamp(116px, 36vh, 158px) + 26px
+    ) !important;
     bottom: max(18px, env(safe-area-inset-bottom)) !important;
     font-size: 16px !important;
     font-weight: 900 !important;
     border-radius: 23px !important;
   }
 
-  /* ERS / DRS remain above the pedals */
   .mobile-controls .mini-btn {
     width: 54px !important;
     height: 54px !important;
-    bottom: calc(max(18px, env(safe-area-inset-bottom)) + clamp(116px, 36vh, 158px) + 13px) !important;
+    bottom: calc(
+      max(18px, env(safe-area-inset-bottom)) +
+      clamp(116px, 36vh, 158px) + 13px
+    ) !important;
     font-size: 12px !important;
   }
 
   .mobile-controls .mini-btn:nth-child(1) {
-    right: calc(max(18px, env(safe-area-inset-right)) + 54px + 12px) !important;
+    right: calc(
+      max(18px, env(safe-area-inset-right)) + 54px + 12px
+    ) !important;
   }
 
   .mobile-controls .mini-btn:nth-child(2) {
@@ -141,17 +146,20 @@ const MOBILE_LAYOUT_CSS = `
   }
 }
 
-@media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
+@media (pointer: coarse) and
+(orientation: landscape) and (max-height: 420px) {
+
   .mobile-controls .steer-btn {
     width: 76px !important;
     height: 76px !important;
     bottom: max(10px, env(safe-area-inset-bottom)) !important;
     border-radius: 19px !important;
-    font-size: 16px !important;
   }
 
   .mobile-controls .steer-right {
-    left: calc(max(10px, env(safe-area-inset-left)) + 76px + 16px) !important;
+    left: calc(
+      max(10px, env(safe-area-inset-left)) + 76px + 16px
+    ) !important;
   }
 
   .mobile-controls .steer-left {
@@ -168,19 +176,28 @@ const MOBILE_LAYOUT_CSS = `
   .mobile-controls .reverse-btn {
     width: 78px !important;
     height: 78px !important;
-    right: calc(max(10px, env(safe-area-inset-right)) + 104px + 18px) !important;
+    right: calc(
+      max(10px, env(safe-area-inset-right)) + 104px + 18px
+    ) !important;
     bottom: max(10px, env(safe-area-inset-bottom)) !important;
   }
 
   .mobile-controls .mini-btn {
     width: 46px !important;
     height: 46px !important;
-    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 104px + 10px) !important;
+    bottom: calc(
+      max(10px, env(safe-area-inset-bottom)) + 104px + 10px
+    ) !important;
   }
 }
 `;
 
-function ControlButton({ label, field, mobileRef, className = "" }) {
+function ControlButton({
+  label,
+  field,
+  mobileRef,
+  className = "",
+}) {
   const set = (on) => {
     mobileRef.current[field] = on;
   };
@@ -211,13 +228,12 @@ function ControlButton({ label, field, mobileRef, className = "" }) {
   );
 }
 
-
-
 const TOUCH = {
   left: [
-    ["LEFT", "left", "steer-btn steer-left"],
-    ["RIGHT", "right", "steer-btn steer-right"],
+    ["<", "left", "steer-btn steer-left"],
+    [">", "right", "steer-btn steer-right"],
   ],
+
   right: [
     ["ERS", "ers", "mini-btn"],
     ["DRS", "drs", "mini-btn"],
@@ -233,10 +249,7 @@ const enterLandscape = async () => {
   } catch {}
 };
 
-// --------------------------------------------------
 // START MENU
-// --------------------------------------------------
-
 function RaceMenu({ sceneReady }) {
   const { phase } = useGame();
 
@@ -254,7 +267,8 @@ function RaceMenu({ sceneReady }) {
 
     window.addEventListener("keydown", handleKeyDown);
 
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () =>
+      window.removeEventListener("keydown", handleKeyDown);
   }, [sceneReady]);
 
   if (phase !== "ready") return null;
@@ -285,7 +299,10 @@ function RaceMenu({ sceneReady }) {
             }
           }}
         >
-          {sceneReady ? "START GRAND PRIX" : "PREPARING CIRCUIT..."}
+          {sceneReady
+            ? "START GRAND PRIX"
+            : "PREPARING CIRCUIT..."}
+
           <span>{sceneReady ? "↗" : "•••"}</span>
         </button>
 
@@ -299,11 +316,13 @@ function RaceMenu({ sceneReady }) {
   );
 }
 
-// --------------------------------------------------
-// PAUSE / GAME MENU
-// --------------------------------------------------
-
-function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
+// PAUSE MENU
+function GameMenu({
+  paused,
+  setPaused,
+  onRestart,
+  onResetCar,
+}) {
   const [open, setOpen] = useState(false);
   const { phase } = useGame();
 
@@ -321,13 +340,16 @@ function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
         <div className="game-menu">
           <button
             type="button"
-            className={`game-menu-toggle ${open ? "is-open" : ""}`}
+            className={`game-menu-toggle ${
+              open ? "is-open" : ""
+            }`}
             onClick={() => setOpen((value) => !value)}
-            aria-label={open ? "Close game menu" : "Open game menu"}
+            aria-label="Game menu"
             aria-expanded={open}
           >
-            <span className="menu-toggle-lines" aria-hidden="true">
-              <i /><i />
+            <span className="menu-toggle-lines">
+              <i />
+              <i />
             </span>
             <span>MENU</span>
           </button>
@@ -337,10 +359,10 @@ function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
               <button
                 type="button"
                 className="game-menu-backdrop"
-                aria-label="Close menu"
                 onClick={closeMenu}
               />
-              <section className="game-menu-panel" aria-label="Race menu">
+
+              <section className="game-menu-panel">
                 <div className="game-menu-heading">
                   <span>APEX <b>RACING</b></span>
                   <small>RACE CONTROL</small>
@@ -355,7 +377,7 @@ function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
                       setPaused(true);
                     }}
                   >
-                    <span className="action-pause-icon">| |</span>
+                    <span>| |</span>
                     PAUSE RACE
                   </button>
                 )}
@@ -386,7 +408,11 @@ function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
                   RESTART RACE
                 </button>
 
-                <button type="button" className="game-menu-close" onClick={closeMenu}>
+                <button
+                  type="button"
+                  className="game-menu-close"
+                  onClick={closeMenu}
+                >
                   BACK TO RACE
                 </button>
               </section>
@@ -402,7 +428,6 @@ function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
             className="pause-icon-only"
             onClick={() => setPaused(false)}
             aria-label="Resume race"
-            title="Resume race"
           >
             Ⅱ
           </button>
@@ -412,10 +437,7 @@ function GameMenu({ paused, setPaused, onRestart, onResetCar }) {
   );
 }
 
-// --------------------------------------------------
 // LOADING SCREEN
-// --------------------------------------------------
-
 function SceneLoading({ visible }) {
   if (!visible) return null;
 
@@ -451,7 +473,8 @@ function TapButton({ label, keyName }) {
         window.dispatchEvent(
           new KeyboardEvent("keydown", {
             key: keyName,
-            code: keyName === "r" ? "KeyR" : "KeyC",
+            code:
+              keyName === "r" ? "KeyR" : "KeyC",
             bubbles: true,
           })
         );
@@ -463,10 +486,7 @@ function TapButton({ label, keyName }) {
   );
 }
 
-// --------------------------------------------------
 // MAIN APP
-// --------------------------------------------------
-
 export default function App() {
   const carRef = useRef(null);
   const speedRef = useRef(null);
@@ -477,7 +497,9 @@ export default function App() {
   const [sceneReady, setSceneReady] = useState(false);
   const [paused, setPaused] = useState(false);
 
-  const [dpr, setDpr] = useState(PHONE ? 1.75 : 1.25);
+  const [dpr, setDpr] = useState(
+    PHONE ? 1.1 : 1.35
+  );
 
   // Keyboard controls
   useEffect(() => {
@@ -525,14 +547,12 @@ export default function App() {
     };
   }, []);
 
-  // Prevent held controls from remaining active while paused.
   useEffect(() => {
     if (paused) {
       mobileRef.current = EMPTY_CONTROLS();
     }
   }, [paused]);
 
-  // Restart by transitioning out of playing before starting again.
   const restartRace = () => {
     setPaused(false);
     game.end();
@@ -542,7 +562,6 @@ export default function App() {
     });
   };
 
-  // Use the existing R-key reset functionality in Car.jsx.
   const resetCar = () => {
     mobileRef.current = EMPTY_CONTROLS();
 
@@ -565,15 +584,16 @@ export default function App() {
 
   return (
     <main className="app-shell">
-
       <Canvas
-        shadows
+        shadows={!PHONE}
         dpr={dpr}
         gl={{
           antialias: false,
           powerPreference: "high-performance",
+          alpha: false,
           stencil: false,
           depth: true,
+          preserveDrawingBuffer: false,
         }}
         camera={{
           position: [0, 7, -13],
@@ -582,14 +602,20 @@ export default function App() {
           far: 2500,
         }}
       >
-
         <PerformanceMonitor
           onDecline={() => {
-            setDpr((d) => Math.max(1, d - 0.25));
+            setDpr((d) =>
+              Math.max(PHONE ? 0.8 : 1, d - 0.15)
+            );
           }}
           onIncline={() => {
-            setDpr((d) => Math.min(PHONE ? 2 : 1.5, d + 0.25));
+            setDpr((d) =>
+              Math.min(PHONE ? 1.35 : 1.65, d + 0.1)
+            );
           }}
+          onFallback={() =>
+            setDpr(PHONE ? 0.85 : 1)
+          }
         />
 
         <color attach="background" args={["#cfdcea"]} />
@@ -597,7 +623,6 @@ export default function App() {
         <GameLoop paused={paused} />
 
         <Suspense fallback={null}>
-
           <Atmosphere />
           <Stadium />
 
@@ -629,13 +654,10 @@ export default function App() {
           <SceneReady
             onReady={() => setSceneReady(true)}
           />
-
         </Suspense>
       </Canvas>
 
       <SceneLoading visible={!sceneReady} />
-
-      {/* RACING HUD */}
 
       <BroadcastHUD
         speedRef={speedRef}
@@ -648,11 +670,7 @@ export default function App() {
 
       <StartCountdown />
 
-      {/* START MENU */}
-
       <RaceMenu sceneReady={sceneReady} />
-
-      {/* PAUSE / RESTART MENU */}
 
       <GameMenu
         paused={paused}
@@ -661,13 +679,7 @@ export default function App() {
         onResetCar={resetCar}
       />
 
-      {/* RESULTS */}
-
-      <RaceResults
-        onRestart={restartRace}
-      />
-
-      {/* MOBILE CONTROLS */}
+      <RaceResults onRestart={restartRace} />
 
       <div className="mobile-controls">
         <style>{MOBILE_LAYOUT_CSS}</style>
@@ -700,14 +712,12 @@ export default function App() {
           <TapButton label="CAM" keyName="c" />
           <TapButton label="RESET" keyName="r" />
         </div>
-
       </div>
 
       <div className="rotate-notice">
         <span>⟳</span>
         ROTATE YOUR PHONE TO LANDSCAPE
       </div>
-
     </main>
   );
 }
