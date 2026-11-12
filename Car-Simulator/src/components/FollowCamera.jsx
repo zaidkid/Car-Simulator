@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 import { telemetry } from "./Telemetry";
-import { IS_MOBILE } from "./Quality";
+import { IS_MOBILE } from "./quality";
 
 // Camera views. Press C to cycle, or 1-8 to pick one (telemetry.camera holds the name).
 // first = eye position relative to the car (x right, y up, z forward): driver-style views.
