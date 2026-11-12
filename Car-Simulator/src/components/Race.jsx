@@ -209,11 +209,11 @@ const gravelColor = new THREE.Color("#2f7138"); // green grass verge
 
 // Asphalt in lateral bands: the middle is darker (rubbered-in racing line)
 const BANDS = [
-  [-TRACK_WIDTH, -6, "#303338"],
-  [-6, -2, "#2a2c31"],
-  [-2, 2, "#232529"],
-  [2, 6, "#2a2c31"],
-  [6, TRACK_WIDTH, "#303338"],
+  [-TRACK_WIDTH, -6, "#3d4147"],
+  [-6, -2, "#363a40"],
+  [-2, 2, "#2e3238"],
+  [2, 6, "#363a40"],
+  [6, TRACK_WIDTH, "#3d4147"],
 ].map(([a, b, hex]) => {
   const dark = new THREE.Color(hex);
   const light = dark.clone().offsetHSL(0, 0, 0.012);

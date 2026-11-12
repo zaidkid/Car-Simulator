@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 import { telemetry } from "./Telemetry";
+import { IS_MOBILE } from "./Quality";
 
 // Camera views. Press C to cycle, or 1-8 to pick one (telemetry.camera holds the name).
 // first = eye position relative to the car (x right, y up, z forward): driver-style views.
@@ -323,7 +324,7 @@ export default function FollowCamera({ targetRef }) {
 
     // A larger near plane keeps the flat track layers from z-fighting.
     camera.near = 0.2;
-    camera.far = 2500;
+    camera.far = IS_MOBILE ? 1400 : 2500; // shorter range on phones = faster, fewer depth glitches
 
     camera.updateProjectionMatrix();
   });
