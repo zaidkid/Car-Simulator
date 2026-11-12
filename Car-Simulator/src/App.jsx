@@ -19,27 +19,24 @@ import CockpitDash from "./components/Cockpitdash";
 import RaceResults from "./components/Raceresults";
 
 import { game, useGame } from "./components/gameStore";
+import { PHONE, LOW_POWER } from "./components/Device";
 import "./mobile.css";
 
 useGLTF.preload("/models/Red_bull_car.glb");
 
-const PHONE =
-  typeof window !== "undefined" &&
-  window.matchMedia("(pointer: coarse)").matches;
 
-// One adaptive-quality controller lives in App.jsx.
-// Do not mount a separate <Quality /> component as well.
+// Adaptive rendering resolution. Higher DPR improves sharpness but costs GPU time.
 const DEVICE_DPR =
   typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
-const MIN_DPR = PHONE ? 0.65 : 0.8;
+const MIN_DPR = PHONE ? 0.8 : 0.9;
 const MAX_DPR = PHONE
-  ? Math.min(DEVICE_DPR, 1.2)
-  : Math.min(DEVICE_DPR, 1.6);
+  ? Math.min(DEVICE_DPR, 1.5)
+  : Math.min(DEVICE_DPR, 2);
 
 const INITIAL_DPR = PHONE
-  ? Math.min(Math.max(DEVICE_DPR * 0.75, 0.8), MAX_DPR)
-  : Math.min(Math.max(DEVICE_DPR * 0.9, 1.0), MAX_DPR);
+  ? Math.min(Math.max(DEVICE_DPR * 0.9, 0.9), MAX_DPR)
+  : Math.min(Math.max(DEVICE_DPR, 1.1), MAX_DPR);
 
 const EMPTY_CONTROLS = () => ({
   forward: false,
@@ -598,10 +595,10 @@ export default function App() {
   return (
     <main className="app-shell">
       <Canvas
-        shadows={false}
+        shadows={!LOW_POWER}
         dpr={dpr}
         gl={{
-          antialias: false,
+          antialias: true,
           powerPreference: "high-performance",
           alpha: false,
           stencil: false,
@@ -631,7 +628,7 @@ export default function App() {
             );
           }}
           onFallback={() => {
-            setDpr(PHONE ? 0.65 : 0.8);
+            setDpr(MIN_DPR);
           }}
         />
 

@@ -1,12 +1,42 @@
-// Shared device checks (import from here instead of repeating the same matchMedia code).
 
+// Shared device and graphics quality detection.
+
+const hasWindow = typeof window !== "undefined";
+
+const forced = hasWindow
+  ? new URLSearchParams(window.location.search).get("q")
+  : null;
+
+// Touchscreen device detection.
 export const PHONE =
-  typeof window !== "undefined" &&
+  hasWindow &&
   window.matchMedia("(pointer: coarse)").matches;
 
-// Only truly weak phones: low memory or very few CPU cores.
-// Missing values (iPhones don't report memory) count as "fine", not "weak".
+// Backward compatibility.
+export const IS_MOBILE = PHONE;
+
+// Hardware information.
+const memory =
+  typeof navigator !== "undefined"
+    ? navigator.deviceMemory ?? 8
+    : 8;
+
+const cores =
+  typeof navigator !== "undefined"
+    ? navigator.hardwareConcurrency ?? 8
+    : 8;
+
+// Detect weaker hardware.
 export const LOW_POWER =
-  PHONE &&
-  typeof navigator !== "undefined" &&
-  ((navigator.deviceMemory ?? 8) <= 3 || (navigator.hardwareConcurrency ?? 8) <= 4);
+  forced === "low"
+    ? true
+    : forced === "high"
+      ? false
+      : PHONE && (memory <= 3 || cores <= 4);
+
+// Quality presets.
+export const QUALITY = LOW_POWER
+  ? "low"
+  : PHONE
+    ? "medium"
+    : "high";
