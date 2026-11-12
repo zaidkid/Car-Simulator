@@ -1,6 +1,6 @@
 import { RigidBody, CuboidCollider } from "@react-three/rapier";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
 
@@ -125,10 +125,11 @@ const recolorLivery = (m) => {
 export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   const gltf = useGLTF(F1_CAR_URL);
   const modelRef = useRef();
+  const { gl } = useThree();
 
   const model = useMemo(
-    () => prepareCarModel(gltf.scene, recolorLivery),
-    [gltf.scene],
+    () => prepareCarModel(gltf.scene, recolorLivery, gl),
+    [gltf.scene, gl],
   );
 
   const { actions } = useAnimations(gltf.animations, modelRef);
