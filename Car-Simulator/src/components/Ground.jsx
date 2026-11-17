@@ -10,7 +10,7 @@ const IS_MOBILE =
 const GRASS_TINT = "#d5dfd2";
 
 function makeGrassTexture(maxAnisotropy) {
-  const size = IS_MOBILE ? 256 : 512;
+  const size = IS_MOBILE ? 384 : 512;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
@@ -25,7 +25,7 @@ function makeGrassTexture(maxAnisotropy) {
     return seed / 4294967296;
   };
 
-  const patches = IS_MOBILE ? 45 : 90;
+  const patches = IS_MOBILE ? 60 : 90;
   for (let i = 0; i < patches; i++) {
     const x = random() * size;
     const y = random() * size;
@@ -41,7 +41,7 @@ function makeGrassTexture(maxAnisotropy) {
     ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
   }
 
-  const flecks = IS_MOBILE ? 2200 : 6000;
+  const flecks = IS_MOBILE ? 3200 : 6000;
   for (let i = 0; i < flecks; i++) {
     const green = 68 + random() * 75;
     ctx.fillStyle = `rgba(${Math.round(green * 0.58)},${Math.round(green)},${Math.round(green * 0.48)},${0.08 + random() * 0.18})`;
@@ -52,7 +52,7 @@ function makeGrassTexture(maxAnisotropy) {
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(260, 260);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = Math.min(maxAnisotropy, IS_MOBILE ? 2 : 8);
+  texture.anisotropy = Math.min(maxAnisotropy, IS_MOBILE ? 4 : 8);
   texture.generateMipmaps = true;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;

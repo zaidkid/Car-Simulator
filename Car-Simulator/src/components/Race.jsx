@@ -5,7 +5,7 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 import { game, DRIVERS } from "./gameStore";
-import { grid, raceInfo } from "./Telemetry";
+import { grid, raceInfo, impactFx } from "./Telemetry";
 import { curve } from "./Trackcurve";
 import { prepareCarModel } from "./CarModel";
 import { mapCars } from "./Racemap";
@@ -24,7 +24,7 @@ const KERB_WIDTH = 2;
 const RUNOFF_END = 19;
 const GRAVEL_END = 26;
 export const WALL_OFFSET = GRAVEL_END;
-const LAPS = 1;
+const LAPS = 2;
 const GRID_GAP = 7;
 
 // F1-style rules
@@ -56,13 +56,13 @@ const JERK = 60; // m/s³ – how fast throttle/brake force can change
 const HIT_TIME = 1.3; // s – player reaction to a hit is spread over this time
 const HIT_PUSH = 2.5; // m/s² peak sideways push on the player (eased in and out)
 const HIT_SLOW = 0.35; // peak speed-loss rate on the player (1/s)
-const AI_HIT_SLOW = 0.1; // fraction of pace an AI loses on contact (then recovers)
+const AI_HIT_SLOW = 0.42; // fraction of pace an AI loses on contact (then recovers)
 const IMPACT_TIME = 3.0; // s – AI swerve/yaw lasts this long
 
 const TRACK_TINT = "#d8dce2"; // very light cool tint on asphalt/grass (cloudy day)
 const CAR_LIFT = 0.07; // lifts car models so wheels sit on top of the track layers
 
-const AI_COLORS = ["#3671ff", "#e10600", "#ff8700", "#e10600", "#00d2be"];
+const AI_COLORS = ["#3b82f6", "#ef4444", "#f97316", "#a855f7", "#06b6d4"];
 const UP = new THREE.Vector3(0, 1, 0);
 
 // ==========================================
@@ -234,7 +234,7 @@ const trackMeshes = [
 ];
 
 // ==========================================
-// BARRIERS, TYRE WALLS, DRS BOARDS (instanced)
+// BARRIERS AND TYRE WALLS (instanced)
 // ==========================================
 
 const BARRIER_COLORS = ["#d71920", "#f4f4f4", "#1b2a6b", "#101114"];
@@ -250,7 +250,6 @@ const at = (i, offset, y) =>
 
 const barrierItems = [];
 const tyreItems = [];
-const drsItems = [];
 
 for (let i = 0; i < SAMPLES; i += BARRIER_STEP) {
   const yaw = Math.atan2(tangents[i].x, tangents[i].z);
@@ -275,19 +274,6 @@ for (let i = 0; i < SAMPLES; i++) {
     });
   }
 }
-
-// Green DRS boards at the start of each zone
-drsZone.forEach((zone, i) => {
-  if (!zone || drsZone[(i - 1 + SAMPLES) % SAMPLES]) return;
-
-  for (const side of [1, -1]) {
-    drsItems.push({
-      position: at(i, side * (TRACK_WIDTH + KERB_WIDTH + 1.5), 1.5),
-      yaw: Math.atan2(tangents[i].x, tangents[i].z),
-      color: "#00c853",
-    });
-  }
-});
 
 function InstancedItems({ items, children }) {
   const ref = useRef();
@@ -515,6 +501,7 @@ function resetDriver(o, index, pace) {
     // collision reaction
     impactTimer: 0,
     impactDirection: 0,
+    impactStrength: 0,
     impactOffset: 0,
     impactYaw: 0,
     collisionCooldown: 0,
@@ -581,12 +568,26 @@ export default function Race({ carRef, hudRef, paused = false }) {
       const teamColor = new THREE.Color(color);
 
       const object = prepareCarModel(scene, (m) => {
-        const hsl = {};
-        m.color?.getHSL(hsl);
+        if (!m.color) return;
 
-        if (m.color && hsl.s > 0.12 && hsl.l > 0.16 && hsl.l < 0.88) {
-          m.color.copy(teamColor).multiplyScalar(Math.max(0.72, hsl.l * 1.35));
-        }
+        // The GLB has one baked texture shared by the body and other parts.
+        // Re-map its brightness through the team color so every AI livery is
+        // visibly distinct without losing the baked shading and graphics.
+        m.color.set("#ffffff");
+        m.onBeforeCompile = (shader) => {
+          shader.uniforms.uLiveryColor = { value: teamColor };
+          shader.fragmentShader = shader.fragmentShader
+            .replace(
+              "#include <common>",
+              "#include <common>\nuniform vec3 uLiveryColor;",
+            )
+            .replace(
+              "#include <color_fragment>",
+              "#include <color_fragment>\nfloat liveryLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));\ndiffuseColor.rgb = mix(diffuseColor.rgb, uLiveryColor * liveryLuma, 0.92);",
+            );
+        };
+        m.customProgramCacheKey = () => "ai-livery-tint-v1";
+        m.needsUpdate = true;
       });
 
       const o = {
@@ -641,11 +642,19 @@ export default function Race({ carRef, hudRef, paused = false }) {
 
     const dx = playerPosition.x - aiPosition.x;
     const dz = playerPosition.z - aiPosition.z;
+    const playerVelocity = playerBody.linvel();
+    const aiVelocity = aiBody.linvel();
+    const relativeSpeed = Math.hypot(
+      playerVelocity.x - aiVelocity.x,
+      playerVelocity.z - aiVelocity.z,
+    );
 
     opponent.impactDirection = dx * aiRight.x + dz * aiRight.z >= 0 ? -1 : 1;
     opponent.impactTimer = IMPACT_TIME;
+    opponent.impactStrength = THREE.MathUtils.clamp(relativeSpeed / 20, 0.75, 1.4);
     opponent.collisionCooldown = 0.8;
-    opponent.slow = Math.max(opponent.slow, AI_HIT_SLOW); // eased out, no instant speed cut
+    opponent.slow = Math.max(opponent.slow, AI_HIT_SLOW * opponent.impactStrength);
+    opponent.speed *= 0.78;
 
     // Player gets a gentle push away from the AI car, spread over HIT_TIME
     const len = Math.hypot(dx, dz) || 1;
@@ -681,7 +690,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
     const body = carRef.current;
     if (!body) return;
 
-    const dt = Math.min(delta, 0.05);
+    const dt = Math.min(delta, 0.05) * impactFx.timeScale;
     const state = race.current;
     const phase = game.get().phase;
     const running = phase === "playing";
@@ -929,7 +938,7 @@ export default function Race({ carRef, hudRef, paused = false }) {
             3,
             dt
           );
-          o.slow = THREE.MathUtils.damp(o.slow, 0, 0.9, dt);
+          o.slow = THREE.MathUtils.damp(o.slow, 0, 0.45, dt);
           target = Math.min(target * o.mult * (1 - o.slow), o.maxSpeed * 1.08);
 
           // Stuck right behind a car in the same line: match its speed until there is room to pass
@@ -954,8 +963,18 @@ export default function Race({ carRef, hudRef, paused = false }) {
 
       const impact = THREE.MathUtils.smoothstep(o.impactTimer, 0, IMPACT_TIME);
 
-      o.impactOffset = THREE.MathUtils.damp(o.impactOffset, o.impactDirection * 2.1 * impact, 1.2, dt);
-      o.impactYaw = THREE.MathUtils.damp(o.impactYaw, o.impactDirection * 0.24 * impact, 1.2, dt);
+      o.impactOffset = THREE.MathUtils.damp(
+        o.impactOffset,
+        o.impactDirection * 4.2 * o.impactStrength * impact,
+        3.2,
+        dt,
+      );
+      o.impactYaw = THREE.MathUtils.damp(
+        o.impactYaw,
+        o.impactDirection * 0.58 * o.impactStrength * impact,
+        2.8,
+        dt,
+      );
 
       // Racing line: use a stronger, smoother corner entry/exit line.
       const k = curvature[Math.floor(wrap(o.distance) / DS) % SAMPLES];
@@ -1288,10 +1307,6 @@ export default function Race({ carRef, hudRef, paused = false }) {
 
       <InstancedItems items={tyreItems}>
         <cylinderGeometry args={[0.5, 0.5, 0.5, 14]} />
-      </InstancedItems>
-
-      <InstancedItems items={drsItems}>
-        <boxGeometry args={[0.3, 3, 5]} />
       </InstancedItems>
 
       {opponents.map((o, index) => {

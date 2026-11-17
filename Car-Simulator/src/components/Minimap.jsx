@@ -3,41 +3,32 @@ import { curve } from "./Trackcurve";
 import { mapCars } from "./Racemap";
 
 const SAMPLES = 500;
-const PAD = 22;
+const PAD = 18;
 
 const css = `
 .mm-wrap {
   position: fixed;
-  right: 24px;
-  bottom: 70px;
+  left: 70%;
+  top: 64%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
   z-index: 99999;
   pointer-events: none;
-  border: 2px solid rgba(225, 6, 0, .95);
-  border-radius: 12px;
-  overflow: hidden;
-  background: rgba(10, 14, 21, .97);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .55);
+  overflow: visible;
   font-family: Arial, sans-serif;
   display: block;
   visibility: visible;
   opacity: 1;
 }
-.mm-title {
-  display: flex;
-  justify-content: space-between;
-  padding: 9px 12px;
-  background: #242b35;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 1.5px;
-  color: #fff;
-}
-.mm-title span:last-child { color: #aab2bd; font-weight: 700; }
 .mm-canvas { display: block; }
+.mm-title { display: none; }
 `;
 
 export default function MiniMap({ size = 220 }) {
   const canvasRef = useRef(null);
+  const width = Math.round(size * 1.28);
+  const height = Math.round(size * 0.62);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -47,27 +38,13 @@ export default function MiniMap({ size = 220 }) {
     if (!ctx) return undefined;
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.round(size * dpr);
-    canvas.height = Math.round(size * dpr);
-    canvas.style.width = `${size}px`;
-    canvas.style.height = `${size}px`;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
 
     const pts = Array.from({ length: SAMPLES }, (_, i) => curve.getPointAt(i / SAMPLES));
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-
-    for (const p of pts) {
-      minX = Math.min(minX, p.x);
-      maxX = Math.max(maxX, p.x);
-      minZ = Math.min(minZ, p.z);
-      maxZ = Math.max(maxZ, p.z);
-    }
-
-    const span = Math.max(maxX - minX, maxZ - minZ) || 1;
-    const scale = (size - PAD * 2) / span;
-    const ox = (size - (maxX - minX) * scale) / 2 - minX * scale;
-    const oz = (size - (maxZ - minZ) * scale) / 2 - minZ * scale;
-    const toX = (x) => ox + x * scale;
-    const toY = (z) => oz + z * scale;
+    const scale = Math.min((width - PAD * 2) / 1000, (height - PAD * 2) / 430);
 
     // Static circuit layer: draw once at device-pixel resolution.
     const layer = document.createElement("canvas");
@@ -77,45 +54,6 @@ export default function MiniMap({ size = 220 }) {
     lg.scale(dpr, dpr);
     lg.lineJoin = "round";
     lg.lineCap = "round";
-
-    const circuitPath = () => {
-      lg.beginPath();
-      pts.forEach((p, i) => {
-        if (i === 0) lg.moveTo(toX(p.x), toY(p.z));
-        else lg.lineTo(toX(p.x), toY(p.z));
-      });
-      lg.closePath();
-    };
-
-    circuitPath();
-    lg.strokeStyle = "#05070b";
-    lg.lineWidth = 12;
-    lg.stroke();
-    circuitPath();
-    lg.strokeStyle = "#e6ebf2";
-    lg.lineWidth = 8;
-    lg.stroke();
-    circuitPath();
-    lg.strokeStyle = "#303947";
-    lg.lineWidth = 4;
-    lg.stroke();
-
-    const drawTick = (t, color, length) => {
-      const p = curve.getPointAt(t);
-      const tangent = curve.getTangentAt(t);
-      const nx = -tangent.z;
-      const ny = tangent.x;
-      lg.strokeStyle = color;
-      lg.lineWidth = 3;
-      lg.beginPath();
-      lg.moveTo(toX(p.x) - nx * length, toY(p.z) - ny * length);
-      lg.lineTo(toX(p.x) + nx * length, toY(p.z) + ny * length);
-      lg.stroke();
-    };
-
-    drawTick(1 / 3, "#ffd23f", 7);
-    drawTick(2 / 3, "#3a8dff", 7);
-    drawTick(0, "#e10600", 10);
 
     let frameId;
     let disposed = false;
@@ -129,41 +67,128 @@ export default function MiniMap({ size = 220 }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const cars = mapCars.filter((car) => car && Number.isFinite(car.x) && Number.isFinite(car.z));
+      const player = cars.find((car) => car.player) || cars[0] || { x: 0, z: 0, yaw: 0 };
+      let nearestIndex = 0;
+      let nearestDistance = Infinity;
+      pts.forEach((point, index) => {
+        const dx = point.x - player.x;
+        const dz = point.z - player.z;
+        const distance = dx * dx + dz * dz;
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = index;
+        }
+      });
+      const tangent = curve.getTangentAt(nearestIndex / SAMPLES);
+      const trackYaw = Math.atan2(tangent.x, tangent.z);
+      const forwardX = Math.sin(trackYaw);
+      const forwardZ = Math.cos(trackYaw);
+      // Canvas X is mirrored relative to the track-side camera/map convention.
+      const rightX = -Math.cos(trackYaw);
+      const rightZ = Math.sin(trackYaw);
+      const centerX = width / 2;
+      const centerY = height * 0.62;
+      const project = (x, z) => {
+        const dx = x - player.x;
+        const dz = z - player.z;
+        return [
+          centerX + (dx * rightX + dz * rightZ) * scale,
+          centerY - (dx * forwardX + dz * forwardZ) * scale,
+        ];
+      };
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(4, 4, width - 8, height - 8);
+      ctx.clip();
+
+      const circuitPath = () => {
+        ctx.beginPath();
+        pts.forEach((point, index) => {
+          const [x, y] = project(point.x, point.z);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+      };
+
+      circuitPath();
+      ctx.strokeStyle = "rgba(0, 0, 0, .92)";
+      ctx.lineWidth = 12;
+      ctx.stroke();
+      circuitPath();
+      ctx.strokeStyle = "rgba(227, 240, 250, .96)";
+      ctx.lineWidth = 7;
+      ctx.stroke();
+      circuitPath();
+      ctx.strokeStyle = "#68798a";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      const drawTick = (t, color, length) => {
+        const point = curve.getPointAt(t);
+        const tangent = curve.getTangentAt(t);
+        const [x, y] = project(point.x, point.z);
+        const nx = -tangent.z;
+        const ny = tangent.x;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - nx * length, y - ny * length);
+        ctx.lineTo(x + nx * length, y + ny * length);
+        ctx.stroke();
+      };
+      drawTick(1 / 3, "#ffb52e", 5);
+      drawTick(2 / 3, "#43c9ff", 5);
+      drawTick(0, "#ffffff", 8);
+
       const ordered = [...cars].sort((a, b) => Number(a.player) - Number(b.player));
 
       ordered.forEach((car) => {
-        const x = toX(car.x);
-        const y = toY(car.z);
+        const [x, y] = car.player ? [centerX, centerY] : project(car.x, car.z);
 
         if (car.player) {
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.arc(x, y, 8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#ffd000";
-          ctx.beginPath();
-          ctx.arc(x, y, 5.5, 0, Math.PI * 2);
-          ctx.fill();
-
-          const hx = Math.sin(car.yaw || 0);
-          const hy = Math.cos(car.yaw || 0);
+          const relativeYaw = (car.yaw || 0) - trackYaw;
+          const hx = -Math.sin(relativeYaw);
+          const hy = -Math.cos(relativeYaw);
+          const px = -hy;
+          const py = hx;
+          ctx.save();
+          ctx.shadowColor = "rgba(255, 50, 47, .95)";
+          ctx.shadowBlur = 10;
+          ctx.fillStyle = "#ff3436";
           ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 1.5;
           ctx.beginPath();
-          ctx.moveTo(x + hx * 7, y + hy * 7);
-          ctx.lineTo(x + hx * 15, y + hy * 15);
+          ctx.moveTo(x + hx * 10, y + hy * 10);
+          ctx.lineTo(x - hx * 6 + px * 5.5, y - hy * 6 + py * 5.5);
+          ctx.lineTo(x - hx * 6 - px * 5.5, y - hy * 6 - py * 5.5);
+          ctx.closePath();
+          ctx.fill();
           ctx.stroke();
+          ctx.restore();
         } else {
-          ctx.fillStyle = "#05070b";
+          ctx.fillStyle = "rgba(0, 0, 0, .8)";
           ctx.beginPath();
-          ctx.arc(x, y, 5.2, 0, Math.PI * 2);
+          ctx.arc(x, y, 4.5, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = car.color || "#3671ff";
           ctx.beginPath();
-          ctx.arc(x, y, 3.8, 0, Math.PI * 2);
+          ctx.arc(x, y, 3.2, 0, Math.PI * 2);
           ctx.fill();
         }
       });
+      ctx.restore();
+
+      // Keep the player marker fixed while the route scrolls beneath it.
+      ctx.save();
+      ctx.shadowColor = "rgba(255, 196, 48, .85)";
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = "#ffd23f";
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     };
 
     frameId = requestAnimationFrame(draw);
@@ -171,13 +196,13 @@ export default function MiniMap({ size = 220 }) {
       disposed = true;
       cancelAnimationFrame(frameId);
     };
-  }, [size]);
+  }, [size, width, height]);
 
   return (
     <div className="mm-wrap">
       <style>{css}</style>
       <div className="mm-title">
-        <span>CIRCUIT MAP</span>
+        <span>LIVE TRACK</span>
         <span>S1 · S2 · S3</span>
       </div>
       <canvas ref={canvasRef} className="mm-canvas" />

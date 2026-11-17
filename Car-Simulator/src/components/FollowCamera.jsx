@@ -2,7 +2,7 @@ import { useThree, useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-import { telemetry } from "./Telemetry";
+import { telemetry, impactFx } from "./Telemetry";
 import { IS_MOBILE } from "./Quality";
 
 // Camera views. Press C to cycle, or 1-8 to pick one (telemetry.camera holds the name).
@@ -190,7 +190,8 @@ export default function FollowCamera({ targetRef }) {
     const amplitude =
       0.0015 +
       speedRatio * speedRatio * 0.006 +
-      telemetry.kerbShake * 0.02;
+      telemetry.kerbShake * 0.02 +
+      telemetry.crashShake * 0.014;
 
     const shakeX =
       (Math.sin(t * 47) + Math.sin(t * 31.7 + 1.3)) * 0.5 * amplitude;
@@ -201,15 +202,19 @@ export default function FollowCamera({ targetRef }) {
       amplitude *
       1.4;
 
+    const impactX = Math.sin(t * 15.5) * telemetry.crashShake * 0.045;
+    const impactY = Math.sin(t * 12.2 + 0.6) * telemetry.crashShake * 0.032;
+    const cinematic = impactFx.envelope * impactFx.direction;
+
     let wantedFov = view.fov;
 
     if (view.first) {
       // DRIVER-STYLE VIEWS (cockpit, hood, T-cam).
       localOffset.current
         .set(
-          view.first[0] + lean.current.x + shakeX,
-          view.first[1] + lean.current.y + shakeY,
-          view.first[2] + lean.current.z
+          view.first[0] + lean.current.x + shakeX + impactX + cinematic * 0.22,
+          view.first[1] + lean.current.y + shakeY + impactY + impactFx.envelope * 0.12,
+          view.first[2] + lean.current.z - impactFx.envelope * 0.45
         )
         .applyQuaternion(quaternion.current);
 
@@ -249,7 +254,7 @@ export default function FollowCamera({ targetRef }) {
       // Orbit circles the car; every other view stays behind it.
       const wantedYaw = view.orbit
         ? t * 0.4 + lookYaw.current
-        : heading + Math.PI + lookYaw.current;
+        : heading + Math.PI + lookYaw.current + cinematic * 0.38;
 
       if (yaw.current === null) {
         yaw.current = wantedYaw;
@@ -265,10 +270,10 @@ export default function FollowCamera({ targetRef }) {
       yaw.current +=
         difference * (1 - Math.exp(-view.turn * dt));
 
-      target.current.y = p.y + view.y;
+      target.current.y = p.y + view.y + impactFx.envelope * 0.25;
 
       const pitch = THREE.MathUtils.clamp(
-        view.pitch + pitchAdjust.current,
+        view.pitch + pitchAdjust.current + impactFx.envelope * 0.08,
         0.05,
         1.45
       );
@@ -278,7 +283,8 @@ export default function FollowCamera({ targetRef }) {
       // The camera pulls back a little at high speed.
       const chaseDistance =
         THREE.MathUtils.clamp(view.dist + distanceAdjust.current, 4, 50) +
-        speedRatio * 2.5;
+        speedRatio * 2.5 +
+        impactFx.envelope * 3.2;
 
       desired.current
         .set(
@@ -296,12 +302,12 @@ export default function FollowCamera({ targetRef }) {
         1 - Math.exp(-9 * dt)
       );
 
-      camera.position.x += shakeX * 0.6;
-      camera.position.y += shakeY * 0.6;
+      camera.position.x += shakeX * 0.6 + impactX;
+      camera.position.y += shakeY * 0.6 + impactY;
 
       lookAt.current
         .copy(target.current)
-        .addScaledVector(forward.current, view.ahead);
+        .addScaledVector(forward.current, view.ahead + impactFx.envelope * 2);
 
       camera.up.set(0, 1, 0);
       camera.lookAt(lookAt.current);
@@ -324,7 +330,7 @@ export default function FollowCamera({ targetRef }) {
 
     // A larger near plane keeps the flat track layers from z-fighting.
     camera.near = 0.2;
-    camera.far = IS_MOBILE ? 1400 : 2500; // shorter range on phones = faster, fewer depth glitches
+    camera.far = IS_MOBILE ? 4000 : 7000;
 
     camera.updateProjectionMatrix();
   });

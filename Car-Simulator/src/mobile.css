@@ -743,6 +743,90 @@ body {
   }
 }
 
+@media (pointer: coarse) {
+  .game-menu-panel {
+    padding: 20px;
+    border: 1px solid rgba(174, 195, 224, .2);
+    border-top: 2px solid #e10600;
+    border-radius: 12px;
+    background:
+      radial-gradient(ellipse at 100% 0%, rgba(54, 77, 111, .2), transparent 44%),
+      linear-gradient(145deg, #171e29 0%, #0c1119 58%, #080b11 100%);
+    box-shadow: 0 30px 100px rgba(0, 0, 0, .76), inset 0 1px rgba(255, 255, 255, .055);
+  }
+
+  .game-menu-heading {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .game-menu-brand-copy { font-size: 20px; }
+
+  .game-menu-session {
+    padding: 6px 7px;
+    font-size: 7px;
+    letter-spacing: .8px;
+  }
+
+  .game-menu-panel .game-menu-action {
+    min-height: 60px;
+    margin-top: 8px;
+    padding: 9px 10px;
+    gap: 10px;
+  }
+
+  .game-menu-panel .game-menu-close { min-height: 44px; }
+}
+
+@media (pointer: coarse) and (max-height: 480px) {
+  .game-menu-panel {
+    max-height: 90dvh;
+    padding: 14px;
+  }
+
+  .game-menu-heading { margin-bottom: 10px; padding-bottom: 10px; }
+  .game-menu-panel .game-menu-action { min-height: 52px; margin-top: 5px; }
+}
+
+@media (pointer: coarse) {
+  .game-menu-toggle {
+    min-width: 104px;
+    height: 40px;
+    border: 1px solid rgba(177, 192, 212, .28);
+    border-radius: 4px;
+    background: rgba(7, 10, 16, .96);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .45), inset 0 1px rgba(255, 255, 255, .06);
+    letter-spacing: 2.3px;
+  }
+
+  .game-menu-panel {
+    width: min(390px, calc(100vw - 24px));
+    max-height: 84dvh;
+    padding: 18px;
+    border-radius: 6px;
+  }
+
+  .game-menu-panel .game-menu-action {
+    min-height: 50px;
+    margin-top: 5px;
+    padding: 6px 9px;
+  }
+
+  .game-menu-panel .game-menu-action-icon,
+  .game-menu-panel .game-menu-action > span:first-child:not(.game-menu-action-copy) {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+
+  .game-menu-panel .game-menu-close {
+    min-height: 40px;
+    margin-top: 11px;
+  }
+}
+
 /* =========================================================
    TOUCH ACCESSIBILITY
 ========================================================= */

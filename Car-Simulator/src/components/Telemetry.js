@@ -19,7 +19,18 @@ export const telemetry = {
   drs: false, // DRS open
   surface: "track", // track | kerb | runoff | gravel
   kerbShake: 0, // 0..1, used by the camera
+  crashShake: 0, // 0..1, eased camera response to a collision
   camera: "cockpit", // cockpit | tcam | chase
+};
+
+// Shared impact timing for physics, race progression, and the crash camera.
+export const impactFx = {
+  elapsed: 1,
+  duration: 1.15,
+  envelope: 0,
+  timeScale: 1,
+  strength: 0,
+  direction: 1,
 };
 
 // Start lights sequence (written by Race.jsx, read by Car.jsx)
@@ -32,7 +43,7 @@ export const grid = {
 // Live race info (written by Race.jsx)
 export const raceInfo = {
   lap: 1,
-  laps: 3,
+  laps: 2,
   position: 1,
   total: 6,
   sector: 1,

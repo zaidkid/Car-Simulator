@@ -20,12 +20,12 @@ const BASE = 3; // grandstands start this far beyond TRACK_OFFSET
 const TILT = 0.13;
 
 const L = curve.getLength();
-const SEGMENTS = Math.round(L / (PHONE ? 38 : 30));
+const SEGMENTS = Math.round(L / (PHONE ? 34 : 30));
 const LEN = (L / SEGMENTS) * 1.03;
 
 // Clearance check: distance to the nearest part of the track that is NOT nearby
 // along the lap, so nothing is built on top of another section of the circuit
-const N = PHONE ? 480 : 640;
+const N = PHONE ? 520 : 640;
 const trackPts = Array.from({ length: N }, (_, j) => curve.getPointAt(j / N));
 const farMin = (x, z, t) => {
   let m = Infinity;
@@ -81,7 +81,7 @@ const tex = (w, h, draw) => {
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.magFilter = THREE.LinearFilter;
   t.generateMipmaps = true;
-  t.anisotropy = PHONE ? 2 : 8;
+  t.anisotropy = PHONE ? 4 : 8;
   return t;
 };
 
@@ -374,6 +374,7 @@ function Instanced({
   cast = false,
   receive = false,
   wave = false,
+  night = false,
   matArray = null,
   ...mat
 }) {
@@ -422,6 +423,13 @@ function Instanced({
       {!matArray && (
         <meshStandardMaterial
           {...mat}
+          emissiveIntensity={
+            mat.emissive
+              ? night
+                ? Math.max(mat.emissiveIntensity || 1, 5.5)
+                : mat.emissiveIntensity
+              : undefined
+          }
           onBeforeCompile={onBeforeCompile}
           customProgramCacheKey={() =>
             animateWave ? "stadium-wave" : "stadium-plain"
@@ -446,6 +454,7 @@ const MATS = {
   },
   fpost: { geo: "cyl", color: "#2b333d", metalness: 0.7, roughness: 0.4 },
   seats: { roughness: 0.75, receive: true },
+  aisle: { color: "#aeb7c2", roughness: 0.82, cast: true, receive: true },
   crowd: { map: crowdTex, roughness: 0.9 },
   rear: { color: "#232c38", roughness: 0.7, cast: true },
   posts: { geo: "cyl", color: "#dfe4ea", metalness: 0.6, roughness: 0.35 },
@@ -649,18 +658,42 @@ function generate() {
             0,
             -side * 0.18
           );
+
+          // Pale concrete cross aisles break up the continuous seating rows.
+          for (const aisleT of [-0.3, 0.3]) {
+            add(
+              "aisle",
+              o,
+              h + 0.04,
+              [1.55, 0.12, 0.58],
+              "#aeb7c2",
+              aisleT * sLenStand,
+            );
+          }
         }
 
         add("rear", oEnd + 0.4, (top + 3) / 2, [0.8, top + 3, sLenStand]);
-        add(
-          "posts",
-          oEnd + 0.6,
-          (roofH - 1) / 2,
-          [0.9, roofH - 1, 0.9],
-          null,
-          sLenStand * 0.45
-        );
-        add("posts", BASE - 1, (roofH - 1) / 2, [0.32, roofH - 1, 0.32]);
+
+        // Repeating support bays make the canopy feel engineered and full-scale.
+        for (const bay of [-0.38, 0, 0.38]) {
+          const dt = bay * sLenStand;
+          add(
+            "posts",
+            oEnd + 0.6,
+            (roofH - 1) / 2,
+            [0.72, roofH - 1, 0.72],
+            null,
+            dt,
+          );
+          add(
+            "posts",
+            BASE - 1,
+            (roofH - 1) / 2,
+            [0.32, roofH - 1, 0.32],
+            null,
+            dt,
+          );
+        }
 
         // team-coloured fascia board along the front of the roof
         add(
@@ -700,7 +733,27 @@ function generate() {
             sg * side * TILT
           );
         }
-        add("steel", o0, roofH + 0.12, [0.45, 0.45, sLenStand]);
+
+        // Roof rafters, purlins, and braces repeat down each stand section.
+        for (const bay of [-0.38, 0, 0.38]) {
+          const dt = bay * sLenStand;
+          for (const [dx, sg] of [
+            [-q, -1],
+            [q, 1],
+          ]) {
+            add(
+              "steel",
+              o0 + dx / 2,
+              roofH - drop / 2,
+              [span / 2, 0.16, 0.18],
+              null,
+              dt,
+              sg * side * TILT,
+            );
+          }
+          add("steel", o0, roofH - drop - 0.32, [span, 0.16, 0.18], null, dt);
+          add("steel", o0, roofH + 0.12, [0.45, 0.45, 0.2], null, dt);
+        }
 
         if (isMain ? i % 5 === 2 : i % 16 === 3) {
           add("screens", oEnd - 0.5, roofH - 3.4, [0.5, 4.4, 9.5]);
@@ -1034,12 +1087,34 @@ function AerialTraffic({ altitude = 155, speed = 0.02 }) {
   );
 }
 
-export default function Stadium() {
+export default function Stadium({ night = false }) {
   const env = useMemo(generate, []);
   const hills = useMemo(makeHills, []);
+  const floodlightPositions = useMemo(() => {
+    const count = PHONE ? 10 : 20;
+    return Array.from({ length: count }, (_, index) => {
+      const t = (index + 0.5) / count;
+      const point = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t);
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+      point.addScaledVector(normal, index % 2 === 0 ? 22 : -22);
+      return [point.x, 30, point.z];
+    });
+  }, []);
 
   return (
     <group>
+      {night && floodlightPositions.map((position, index) => (
+        <pointLight
+          key={`stadium-floodlight-${index}`}
+          position={position}
+          color="#ffe3ad"
+          intensity={PHONE ? 6500 : 8500}
+          distance={285}
+          decay={2}
+        />
+      ))}
+
       <mesh geometry={hills}>
         <meshStandardMaterial
           vertexColors
@@ -1051,7 +1126,7 @@ export default function Stadium() {
       <AerialTraffic />
 
       {Object.entries(MATS).map(([k, m]) => (
-        <Instanced key={k} items={env[k]} {...m} />
+        <Instanced key={k} items={env[k]} night={night} {...m} />
       ))}
     </group>
   );

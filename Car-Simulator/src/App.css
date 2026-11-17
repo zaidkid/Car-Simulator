@@ -986,6 +986,339 @@ button:focus-visible {
 
 }
 
+/* Premium race-control menu refresh */
+.game-menu-panel {
+  padding: 22px;
+  border: 1px solid rgba(174, 195, 224, .2);
+  border-top: 2px solid #e10600;
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(54, 77, 111, .2), transparent 44%),
+    linear-gradient(145deg, #171e29 0%, #0c1119 58%, #080b11 100%);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, .76), inset 0 1px rgba(255, 255, 255, .055);
+  backdrop-filter: blur(22px) saturate(125%);
+  -webkit-backdrop-filter: blur(22px) saturate(125%);
+}
+
+.game-menu-heading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 2px 0 17px;
+  border-bottom: 1px solid rgba(255, 255, 255, .1);
+}
+
+.game-menu-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.game-menu-brand-mark {
+  width: 5px;
+  height: 36px;
+  flex: 0 0 5px;
+  background: linear-gradient(180deg, #ff5157, #d90008);
+  transform: skew(-14deg);
+  box-shadow: 0 0 18px rgba(225, 6, 0, .28);
+}
+
+.game-menu-brand-copy {
+  display: grid;
+  gap: 4px;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  line-height: 1;
+}
+
+.game-menu-brand-copy b { color: #ff3942; }
+
+.game-menu-brand-copy small {
+  color: #8d99aa;
+  font-family: Inter, sans-serif;
+  font-size: 8px;
+  letter-spacing: 2.1px;
+}
+
+.game-menu-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border: 1px solid rgba(44, 218, 151, .2);
+  border-radius: 5px;
+  background: rgba(20, 134, 92, .12);
+  color: #a9c6ba;
+  font: 800 8px Inter, sans-serif;
+  letter-spacing: 1.1px;
+}
+
+.game-menu-session i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #28dc92;
+  box-shadow: 0 0 9px rgba(40, 220, 146, .8);
+}
+
+.game-menu-section-label {
+  margin: 0 0 9px 2px;
+  color: #778497;
+  font: 800 8px Inter, sans-serif;
+  letter-spacing: 2px;
+}
+
+.game-menu-panel .game-menu-action {
+  min-height: 62px;
+  margin-top: 8px;
+  padding: 9px 11px;
+  gap: 11px;
+  border: 1px solid rgba(197, 212, 235, .12);
+  border-radius: 8px;
+  background: linear-gradient(100deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .018));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+  text-align: left;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+
+.game-menu-panel .game-menu-action.primary {
+  border-color: rgba(225, 6, 0, .35);
+  background: linear-gradient(100deg, rgba(225, 6, 0, .17), rgba(225, 6, 0, .045));
+}
+
+.game-menu-panel .game-menu-action-icon {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #252e3c, #141a24);
+  color: #f2f5fa;
+  font: 800 13px Inter, sans-serif;
+}
+
+.game-menu-panel .game-menu-action > span:first-child:not(.game-menu-action-copy) {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #252e3c, #141a24);
+  color: #f2f5fa;
+  font: 800 13px Inter, sans-serif;
+}
+
+.game-menu-panel .game-menu-action-copy {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+  color: #f3f5f8;
+  font-family: Inter, sans-serif;
+  letter-spacing: 0;
+}
+
+.game-menu-panel .game-menu-action-copy strong {
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+}
+
+.game-menu-panel .game-menu-action-copy small {
+  color: #8793a3;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .1px;
+}
+
+.game-menu-panel .game-menu-state {
+  display: inline-flex;
+  min-width: 43px;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(162, 176, 196, .2);
+  border-radius: 4px;
+  background: rgba(12, 17, 25, .68);
+  color: #8d9aac;
+  font: 850 8px Inter, sans-serif;
+  letter-spacing: 1.3px;
+}
+
+.game-menu-panel .game-menu-state.is-active {
+  border-color: rgba(70, 199, 255, .35);
+  background: rgba(24, 105, 154, .22);
+  color: #8addff;
+}
+
+.game-menu-panel .game-menu-action-arrow {
+  color: #7e8a9b;
+  font: 400 22px Inter, sans-serif;
+  line-height: 1;
+}
+
+.game-menu-panel .night-action.is-active .game-menu-action-icon {
+  border-color: rgba(95, 160, 255, .26);
+  background: linear-gradient(145deg, #243b62, #18233b);
+  color: #a8caff;
+}
+
+.game-menu-panel .game-menu-close {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 15px;
+  padding: 0 13px;
+  border: 1px solid rgba(225, 6, 0, .42);
+  border-radius: 7px;
+  background: linear-gradient(100deg, #d90810, #a8070b);
+  color: #fff;
+  font: 900 9px Inter, sans-serif;
+  letter-spacing: 1.5px;
+  box-shadow: 0 6px 18px rgba(160, 0, 0, .2);
+  transition: filter .15s ease, transform .15s ease;
+}
+
+.game-menu-panel .game-menu-close b {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.game-menu-panel .game-menu-close:hover { color: #fff; filter: brightness(1.14); }
+
+@media (hover: hover) {
+  .game-menu-panel .game-menu-action:hover {
+    transform: translateX(2px);
+    border-color: rgba(255, 255, 255, .3);
+    background: linear-gradient(100deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .035));
+    box-shadow: inset 3px 0 #e10600, 0 8px 20px rgba(0, 0, 0, .2);
+  }
+}
+
+.game-menu-panel button:focus-visible {
+  outline: 2px solid #ff555b;
+  outline-offset: 3px;
+}
+
+/* Compact esports-style in-race menu */
+.game-menu-toggle {
+  min-width: 104px;
+  height: 40px;
+  border: 1px solid rgba(177, 192, 212, .28);
+  border-radius: 4px;
+  background: rgba(7, 10, 16, .96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .45), inset 0 1px rgba(255, 255, 255, .06);
+  letter-spacing: 2.3px;
+}
+
+.game-menu-toggle.is-open,
+.game-menu-toggle:hover {
+  border-color: rgba(255, 65, 73, .72);
+  background: #10151e;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .5), 0 0 18px rgba(225, 6, 0, .12);
+}
+
+.game-menu-panel {
+  width: min(390px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid rgba(159, 176, 201, .2);
+  border-top: 2px solid #ef2630;
+  border-radius: 6px;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, .035), transparent 40%),
+    linear-gradient(145deg, #141a24 0%, #0b0f16 72%);
+  box-shadow: 0 26px 80px rgba(0, 0, 0, .78), inset 0 1px rgba(255, 255, 255, .045);
+}
+
+.game-menu-heading {
+  margin-bottom: 13px;
+  padding-bottom: 12px;
+}
+
+.game-menu-brand-mark {
+  height: 31px;
+  box-shadow: none;
+}
+
+.game-menu-brand-copy { font-size: 19px; }
+.game-menu-brand-copy small { font-size: 7px; letter-spacing: 1.8px; }
+
+.game-menu-session {
+  padding: 5px 7px;
+  border-radius: 3px;
+  font-size: 7px;
+  letter-spacing: 1.4px;
+}
+
+.game-menu-section-label {
+  margin-bottom: 6px;
+  font-size: 7px;
+  letter-spacing: 2px;
+}
+
+.game-menu-panel .game-menu-action {
+  min-height: 50px;
+  margin-top: 5px;
+  padding: 6px 9px;
+  gap: 10px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .035);
+  box-shadow: none;
+}
+
+.game-menu-panel .game-menu-action.primary {
+  border-color: rgba(225, 6, 0, .38);
+  background: linear-gradient(90deg, rgba(225, 6, 0, .17), rgba(225, 6, 0, .035));
+  box-shadow: inset 2px 0 #e10600;
+}
+
+.game-menu-panel .game-menu-action-icon,
+.game-menu-panel .game-menu-action > span:first-child:not(.game-menu-action-copy) {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+  border-radius: 4px;
+  background: #1b222e;
+  font-size: 12px;
+}
+
+.game-menu-panel .game-menu-action-copy { gap: 0; }
+.game-menu-panel .game-menu-action-copy strong { font-size: 10px; letter-spacing: 1px; }
+.game-menu-panel .game-menu-action-copy small { display: none; }
+.game-menu-panel .game-menu-action-arrow { font-size: 18px; }
+
+.game-menu-panel .game-menu-state {
+  min-width: 39px;
+  height: 20px;
+  border-radius: 3px;
+  font-size: 7px;
+}
+
+.game-menu-panel .night-action.is-active .game-menu-action-icon {
+  background: #1c304c;
+}
+
+.game-menu-panel .game-menu-close {
+  min-height: 40px;
+  margin-top: 11px;
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 8px;
+  letter-spacing: 1.7px;
+}
+
 
 
 .scene-loading {

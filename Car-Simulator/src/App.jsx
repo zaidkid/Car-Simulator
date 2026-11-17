@@ -19,6 +19,7 @@ import CockpitDash from "./components/Cockpitdash";
 import RaceResults from "./components/Raceresults";
 
 import { game, useGame } from "./components/gameStore";
+import { impactFx } from "./components/Telemetry";
 import { PHONE, LOW_POWER } from "./components/Device";
 import "./mobile.css";
 
@@ -29,13 +30,16 @@ useGLTF.preload("/models/Red_bull_car.glb");
 const DEVICE_DPR =
   typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
-const MIN_DPR = PHONE ? 0.8 : 0.9;
+const MIN_DPR = PHONE ? (LOW_POWER ? 0.82 : 0.98) : 0.9;
 const MAX_DPR = PHONE
-  ? Math.min(DEVICE_DPR, 1.5)
+  ? Math.min(DEVICE_DPR, LOW_POWER ? 1.25 : 1.65)
   : Math.min(DEVICE_DPR, 2);
 
 const INITIAL_DPR = PHONE
-  ? Math.min(Math.max(DEVICE_DPR * 0.9, 0.9), MAX_DPR)
+  ? Math.min(
+      Math.max(DEVICE_DPR * (LOW_POWER ? 0.82 : 0.96), LOW_POWER ? 0.9 : 1.2),
+      MAX_DPR
+    )
   : Math.min(Math.max(DEVICE_DPR, 1.1), MAX_DPR);
 
 const EMPTY_CONTROLS = () => ({
@@ -50,7 +54,7 @@ const EMPTY_CONTROLS = () => ({
 function GameLoop({ paused }) {
   useFrame((_, delta) => {
     if (!paused) {
-      game.tick(Math.min(delta, 0.1));
+      game.tick(Math.min(delta, 0.1) * impactFx.timeScale);
     }
   });
 
@@ -333,6 +337,8 @@ function GameMenu({
   setPaused,
   onRestart,
   onResetCar,
+  nightMode,
+  setNightMode,
 }) {
   const [open, setOpen] = useState(false);
   const { phase } = useGame();
@@ -375,9 +381,32 @@ function GameMenu({
 
               <section className="game-menu-panel">
                 <div className="game-menu-heading">
-                  <span>APEX <b>RACING</b></span>
-                  <small>RACE CONTROL</small>
+                  <div className="game-menu-brand">
+                    <span className="game-menu-brand-mark" aria-hidden="true" />
+                    <span className="game-menu-brand-copy">
+                      <span>APEX <b>RACING</b></span>
+                      <small>RACE CONTROL</small>
+                    </span>
+                  </div>
+                  <span className="game-menu-session"><i />LIVE</span>
                 </div>
+
+                <div className="game-menu-section-label">RACE OPTIONS</div>
+
+                <button
+                  type="button"
+                  className={`game-menu-action night-action ${nightMode ? "is-active" : ""}`}
+                  aria-pressed={nightMode}
+                  onClick={() => setNightMode((value) => !value)}
+                >
+                  <span className="game-menu-action-icon" aria-hidden="true">{nightMode ? "☾" : "☼"}</span>
+                  <span className="game-menu-action-copy">
+                    <strong>Night mode</strong>
+                  </span>
+                  <span className={`game-menu-state ${nightMode ? "is-active" : ""}`}>
+                    {nightMode ? "ON" : "OFF"}
+                  </span>
+                </button>
 
                 {phase === "playing" && (
                   <button
@@ -388,8 +417,11 @@ function GameMenu({
                       setPaused(true);
                     }}
                   >
-                    <span>| |</span>
-                    PAUSE RACE
+                    <span className="game-menu-action-icon" aria-hidden="true">Ⅱ</span>
+                    <span className="game-menu-action-copy">
+                      <strong>Pause race</strong>
+                    </span>
+                    <span className="game-menu-action-arrow" aria-hidden="true">›</span>
                   </button>
                 )}
 
@@ -403,7 +435,10 @@ function GameMenu({
                   }}
                 >
                   <span>↺</span>
-                  RESET CAR
+                  <span className="game-menu-action-copy">
+                    <strong>Reset car</strong>
+                  </span>
+                  <span className="game-menu-action-arrow" aria-hidden="true">›</span>
                 </button>
 
                 <button
@@ -416,7 +451,10 @@ function GameMenu({
                   }}
                 >
                   <span>⟲</span>
-                  RESTART RACE
+                  <span className="game-menu-action-copy">
+                    <strong>Restart race</strong>
+                  </span>
+                  <span className="game-menu-action-arrow" aria-hidden="true">›</span>
                 </button>
 
                 <button
@@ -424,7 +462,8 @@ function GameMenu({
                   className="game-menu-close"
                   onClick={closeMenu}
                 >
-                  BACK TO RACE
+                  <span>RETURN TO RACE</span>
+                  <b aria-hidden="true">↑</b>
                 </button>
               </section>
             </>
@@ -507,6 +546,7 @@ export default function App() {
 
   const [sceneReady, setSceneReady] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [nightMode, setNightMode] = useState(false);
 
   // Start with a balanced resolution, then let PerformanceMonitor adapt it.
   const [dpr, setDpr] = useState(INITIAL_DPR);
@@ -609,7 +649,7 @@ export default function App() {
           position: [0, 7, -13],
           fov: 60,
           near: 0.2,
-          far: 2500,
+          far: PHONE ? 4000 : 7000,
         }}
       >
         <PerformanceMonitor
@@ -632,13 +672,13 @@ export default function App() {
           }}
         />
 
-        <color attach="background" args={["#cfdcea"]} />
+        <color attach="background" args={[nightMode ? "#020308" : "#cfdcea"]} />
 
         <GameLoop paused={paused} />
 
         <Suspense fallback={null}>
-          <Atmosphere />
-          <Stadium />
+          <Atmosphere followRef={carRef} night={nightMode} />
+          <Stadium night={nightMode} />
 
           <Physics
             gravity={[0, -25, 0]}
@@ -663,7 +703,7 @@ export default function App() {
 
           <FollowCamera targetRef={carRef} />
 
-          <Effects />
+          <Effects night={nightMode} />
 
           <SceneReady
             onReady={() => setSceneReady(true)}
@@ -691,6 +731,8 @@ export default function App() {
         setPaused={setPaused}
         onRestart={restartRace}
         onResetCar={resetCar}
+        nightMode={nightMode}
+        setNightMode={setNightMode}
       />
 
       <RaceResults onRestart={restartRace} />

@@ -1,4 +1,4 @@
-import { RigidBody, CuboidCollider } from "@react-three/rapier";
+import { RigidBody, CuboidCollider, useBeforePhysicsStep } from "@react-three/rapier";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
@@ -6,7 +6,7 @@ import * as THREE from "three";
 
 import { game } from "./gameStore";
 import { START, track, trackNormals, WALL_OFFSET } from "./Race";
-import { telemetry, grid } from "./Telemetry";
+import { telemetry, grid, impactFx } from "./Telemetry";
 import { prepareCarModel } from "./CarModel";
 
 const F1_CAR_URL = "/models/Red_bull_car.glb";
@@ -40,13 +40,13 @@ const CAR = {
   // ---- cornering / steering (v2: much more responsive) ----
   roadGrip: 7, // how quickly sideways sliding is killed (was 5.5)
   gripPerSpeed: 0.05, // extra grip with speed (was 0.035)
-  lateralBase: 24, // sideways acceleration available at low speed, m/s^2 (was 14)
-  downforceLat: 0.0085, // extra sideways acceleration from downforce (was 0.0054)
-  maxYawLow: 2.2, // maximum turn rate at low speed, rad/s (was 1.6)
+  lateralBase: 30, // sideways acceleration available at low speed, m/s^2
+  downforceLat: 0.012, // extra sideways acceleration from downforce
+  maxYawLow: 2.8, // maximum turn rate at low speed, rad/s
 
-  steerRate: 8, // how fast the wheel turns toward the input (was 5.5)
-  steerReturn: 11, // how fast the wheel returns to centre (was 8)
-  steerSpeedFade: 80, // steering ramp slows only slightly with speed (was 30)
+  steerRate: 12, // how fast steering reaches the requested input
+  steerReturn: 14, // how fast the wheel returns to centre
+  steerSpeedFade: 130, // preserve steering response at higher speeds
 
   ersDrain: 7,
   ersRecharge: 3,
@@ -82,19 +82,19 @@ const SURFACE = {
   },
 
   runoff: {
-    speed: 0.62,
-    grip: 0.7,
-    accel: 0.7,
-    extraDrag: 4,
-    overDecel: 12,
+    speed: 1,
+    grip: 1,
+    accel: 1,
+    extraDrag: 0,
+    overDecel: 6,
   },
 
   gravel: {
-    speed: 0.28,
-    grip: 0.38,
-    accel: 0.35,
-    extraDrag: 16,
-    overDecel: 25,
+    speed: 1,
+    grip: 1,
+    accel: 1,
+    extraDrag: 0,
+    overDecel: 6,
   },
 };
 
@@ -127,6 +127,10 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   const modelRef = useRef();
   const { gl } = useThree();
 
+  useBeforePhysicsStep((world) => {
+    world.timestep *= impactFx.timeScale;
+  });
+
   const model = useMemo(
     () => prepareCarModel(gltf.scene, recolorLivery, gl),
     [gltf.scene, gl],
@@ -145,9 +149,11 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   }, [actions]);
 
   const keys = useRef({});
-  // One reusable spark mesh: collisions no longer trigger React state updates.
-  const sparkRef = useRef(null);
-  const sparkAge = useRef(1);
+  // Reusable spark particles: collisions do not trigger React state updates.
+  const sparkRefs = useRef([]);
+  const sparkMotion = useRef([]);
+  const crashShake = useRef({ time: 0, strength: 0 });
+  const rollover = useRef({ active: false, elapsed: 0, recovering: false });
 
   const engine = useRef(null);
   const horn = useRef(null);
@@ -222,6 +228,12 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     body.setLinvel({ x: 0, y: 0, z: 0 }, true);
 
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    body.setEnabledRotations(false, true, false, true);
+    rollover.current = { active: false, elapsed: 0, recovering: false };
+    impactFx.elapsed = impactFx.duration;
+    impactFx.envelope = 0;
+    impactFx.timeScale = 1;
+    impactFx.strength = 0;
 
     Object.assign(ctl.current, {
       battery: 100,
@@ -240,6 +252,8 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     collisionState.current.timer = 0;
     collisionState.current.spin = 0;
     collisionState.current.wall = 0;
+    crashShake.current = { time: 0, strength: 0 };
+    telemetry.crashShake = 0;
     contact.current = { init: false, lx: 0, lz: 0, px: 0, pz: 0 };
 
     keys.current = {};
@@ -408,15 +422,45 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   // CRASH SPARKS
   // ==========================================
 
-  const addSparks = (now) => {
-    const p = carRef.current?.translation();
+  const addSparks = (now, otherBody = null) => {
+    const playerPosition = carRef.current?.translation();
+    const otherPosition = otherBody?.translation();
 
-    if (p && sparkRef.current) {
-      sparkRef.current.position.set(p.x, p.y + 0.4, p.z);
-      sparkRef.current.scale.setScalar(1);
-      sparkRef.current.material.opacity = 1;
-      sparkRef.current.visible = true;
-      sparkAge.current = 0;
+    if (playerPosition) {
+      const origin = otherPosition
+        ? {
+            x: (playerPosition.x + otherPosition.x) * 0.5,
+            y: (playerPosition.y + otherPosition.y) * 0.5 + 0.35,
+            z: (playerPosition.z + otherPosition.z) * 0.5,
+          }
+        : { x: playerPosition.x, y: playerPosition.y + 0.35, z: playerPosition.z };
+
+      sparkRefs.current.forEach((particle) => {
+        if (!particle) return;
+        particle.position.set(
+          origin.x + (Math.random() - 0.5) * 0.7,
+          origin.y + Math.random() * 0.35,
+          origin.z + (Math.random() - 0.5) * 0.7,
+        );
+        particle.scale.set(0.45, 2.5 + Math.random() * 2, 0.45);
+        particle.material.opacity = 1;
+        particle.visible = true;
+      });
+
+      sparkMotion.current = sparkRefs.current.map(() => ({
+        age: 0,
+        vx: (Math.random() - 0.5) * 12,
+        vy: 2 + Math.random() * 9,
+        vz: (Math.random() - 0.5) * 12,
+      }));
+      sparkRefs.current.forEach((particle, index) => {
+        const motion = sparkMotion.current[index];
+        if (!particle || !motion) return;
+        particle.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(motion.vx, motion.vy, motion.vz).normalize(),
+        );
+      });
     }
 
     if (crashAudio.current) {
@@ -428,6 +472,23 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   // ==========================================
   // COLLISIONS
   // ==========================================
+
+  const startRollover = (direction, impactSpeed) => {
+    const body = carRef.current;
+    if (!body || rollover.current.active || impactSpeed < 58) return;
+
+    rollover.current = { active: true, elapsed: 0, recovering: false };
+    body.setEnabledRotations(true, true, true, true);
+    const angular = body.angvel();
+    body.setAngvel(
+      {
+        x: -direction * 0.8,
+        y: angular.y,
+        z: direction * (1.8 + Math.min(1.5, (impactSpeed - 58) * 0.035)),
+      },
+      true,
+    );
+  };
 
   const onCollision = (event) => {
     const otherName = event.other.rigidBodyObject?.name || "";
@@ -468,19 +529,36 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     }
 
     const impactVelocity = playerBody?.linvel();
+    const otherVelocity = otherBody?.linvel();
 
     const impactSpeed = impactVelocity
-      ? Math.hypot(impactVelocity.x, impactVelocity.z)
+      ? Math.hypot(
+          impactVelocity.x - (otherVelocity?.x || 0),
+          impactVelocity.z - (otherVelocity?.z || 0),
+        )
       : 0;
+
+    startRollover(spinDirection, impactSpeed);
+
+    if (impactSpeed > 14) {
+      impactFx.elapsed = 0;
+      impactFx.duration = 1.15;
+      impactFx.strength = THREE.MathUtils.clamp(impactSpeed / 36, 0.35, 1);
+      impactFx.direction = spinDirection;
+    }
 
     collisionState.current.timer = COLLISION_TIME;
 
     // Gentler peak spin; it is eased in and out over COLLISION_TIME.
     collisionState.current.spin =
       spinDirection * THREE.MathUtils.clamp(impactSpeed / 160, 0.06, 0.22);
+    crashShake.current = {
+      time: 1.05,
+      strength: THREE.MathUtils.clamp(impactSpeed / 65, 0.3, 1),
+    };
 
     game.crash();
-    addSparks(now);
+    addSparks(now, otherBody);
   };
 
   // ==========================================
@@ -488,14 +566,32 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
   // ==========================================
 
   useFrame((state, delta) => {
-    // Update the short-lived spark without mounting/unmounting React components.
-    if (sparkRef.current && sparkAge.current < 0.35) {
-      sparkAge.current += delta;
-      const t = Math.min(1, sparkAge.current / 0.35);
-      sparkRef.current.scale.setScalar(1 + t * 2.5);
-      sparkRef.current.material.opacity = 1 - t;
-      if (t >= 1) sparkRef.current.visible = false;
+    if (impactFx.elapsed < impactFx.duration) {
+      impactFx.elapsed = Math.min(impactFx.duration, impactFx.elapsed + delta);
+      const progress = impactFx.elapsed / impactFx.duration;
+      const rise = THREE.MathUtils.smoothstep(progress, 0, 0.08);
+      const fall = 1 - THREE.MathUtils.smoothstep(progress, 0.08, 1);
+      impactFx.envelope = rise * fall * impactFx.strength;
+      impactFx.timeScale = 1 - impactFx.envelope * 0.68;
+    } else {
+      impactFx.envelope = 0;
+      impactFx.timeScale = 1;
     }
+
+    const scaledDelta = delta * impactFx.timeScale;
+
+    // Animate sparks with a short upward arc and gentle fade.
+    sparkRefs.current.forEach((particle, index) => {
+      const motion = sparkMotion.current[index];
+      if (!particle || !motion || motion.age >= 0.62) return;
+      motion.age += scaledDelta;
+      particle.position.x += motion.vx * scaledDelta;
+      particle.position.y += motion.vy * scaledDelta;
+      particle.position.z += motion.vz * scaledDelta;
+      motion.vy -= 15 * scaledDelta;
+      particle.material.opacity = Math.max(0, 1 - motion.age / 0.62);
+      if (motion.age >= 0.62) particle.visible = false;
+    });
 
     if (paused) {
       if (engine.current && !engine.current.paused) {
@@ -511,7 +607,15 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     if (!body) return;
 
-    const dt = Math.min(delta, 0.04);
+    const dt = Math.min(delta, 0.04) * impactFx.timeScale;
+
+    const crash = crashShake.current;
+    crash.time = Math.max(0, crash.time - dt);
+    const crashElapsed = 1.05 - crash.time;
+    const crashRise = THREE.MathUtils.smoothstep(crashElapsed, 0, 0.18);
+    const crashFall = 1 - THREE.MathUtils.smoothstep(crashElapsed, 0.18, 1.05);
+    const crashEnvelope = crashRise * crashFall * crash.strength;
+    telemetry.crashShake = THREE.MathUtils.damp(telemetry.crashShake, crashEnvelope, 3.2, dt);
 
     if (dt <= 0) return;
 
@@ -531,7 +635,7 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     const carPosition = body.translation();
 
-    if (carPosition.y < -1.5) {
+    if (carPosition.y < -1.5 && !rollover.current.active) {
       console.warn("APEX RACING: Car fell below the circuit. Recovering...");
 
       resetCar();
@@ -546,7 +650,7 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     // START LIGHT CONTROL
     // ==========================================
 
-    const canDrive = active && grid.go;
+    const canDrive = active && grid.go && !rollover.current.active;
 
     const c = ctl.current;
 
@@ -770,6 +874,12 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
     nextForwardSpeed = Math.max(nextForwardSpeed, -CAR.reverseSpeed);
 
+    // Engine braking can cross zero by a tiny amount and create reverse creep.
+    // Keep the car stopped unless the player deliberately selects reverse.
+    if (!throttleIn && !brakeIn && Math.abs(nextForwardSpeed) < 0.35) {
+      nextForwardSpeed = 0;
+    }
+
     // Smooth slowdown after hits (car hit: bell curve, wall hit: fading)
     nextForwardSpeed *= Math.exp(
       -(COLLISION_DRAG * collisionBlend + WALL_DRAG * collision.wall) * dt,
@@ -860,6 +970,7 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
           collision.wall = 1; // speed loss fades out via WALL_DRAG instead of an instant x0.8
           game.crash();
           addSparks(now);
+          startRollover(side, Math.hypot(velocity.current.x, velocity.current.z));
         } else {
           collision.wall = Math.max(collision.wall, 0.3); // light drag while scraping
         }
@@ -897,14 +1008,65 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
     ct.lz = velocity.current.z;
     ct.init = true;
 
-    body.setAngvel(
-      {
-        x: 0,
-        y: steeringRate + collisionSpin,
-        z: 0,
-      },
-      true,
-    );
+    if (rollover.current.active) {
+      const roll = rollover.current;
+      roll.elapsed += dt;
+      const angular = body.angvel();
+
+      if (roll.elapsed >= 1.7 || body.translation().y < 0.2) roll.recovering = true;
+
+      if (roll.recovering) {
+        const position = body.translation();
+        body.setTranslation(
+          {
+            x: position.x,
+            y: THREE.MathUtils.damp(position.y, 0.48, 2, dt),
+            z: position.z,
+          },
+          true,
+        );
+
+        const currentRotation = body.rotation();
+        const currentQuaternion = new THREE.Quaternion(
+          currentRotation.x,
+          currentRotation.y,
+          currentRotation.z,
+          currentRotation.w,
+        );
+        const projectedForward = new THREE.Vector3(0, 0, 1)
+          .applyQuaternion(currentQuaternion)
+          .setY(0);
+        if (projectedForward.lengthSq() < 0.01) projectedForward.set(1, 0, 0);
+        projectedForward.normalize();
+        const targetYaw = Math.atan2(projectedForward.x, projectedForward.z);
+        const upright = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          targetYaw,
+        );
+        currentQuaternion.slerp(upright, 1 - Math.exp(-2.5 * dt));
+        body.setRotation(currentQuaternion, true);
+        body.setAngvel(
+          { x: angular.x * 0.82, y: angular.y * 0.82, z: angular.z * 0.82 },
+          true,
+        );
+
+        if (currentQuaternion.angleTo(upright) < 0.09) {
+          body.setRotation(upright, true);
+          body.setEnabledRotations(false, true, false, true);
+          body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+          rollover.current = { active: false, elapsed: 0, recovering: false };
+        }
+      }
+    } else {
+      body.setAngvel(
+        {
+          x: 0,
+          y: steeringRate + collisionSpin,
+          z: 0,
+        },
+        true,
+      );
+    }
 
     // ==========================================
     // RPM
@@ -1112,16 +1274,23 @@ export default function Car({ carRef, mobileRef, hudRef, paused = false }) {
 
   return (
     <>
-      <mesh ref={sparkRef} visible={false} renderOrder={20}>
-        <sphereGeometry args={[0.12, 8, 8]} />
-        <meshBasicMaterial
-          color="#ffb000"
-          transparent
-          opacity={0}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
+      {Array.from({ length: 18 }, (_, index) => (
+        <mesh
+          key={`spark-${index}`}
+          ref={(node) => { sparkRefs.current[index] = node; }}
+          visible={false}
+          renderOrder={20}
+        >
+          <sphereGeometry args={[0.045, 8, 6]} />
+          <meshBasicMaterial
+            color={index % 3 === 0 ? "#fff2ad" : index % 3 === 1 ? "#ffb000" : "#ff6a00"}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
 
       <RigidBody
         ref={carRef}
